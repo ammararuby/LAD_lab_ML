@@ -1,0 +1,143 @@
+---
+title: "ML: classification"
+output: html_notebook
+---
+
+# Caret- Ben
+
+```{r}
+
+# train/test split based box plotting of correlations
+# data: dataframe of samples x features. Features include the variables you want to predict
+# variables: variables that you want to predict using the OTU data
+# iterations: number of different iterations to run of the splitting
+# trainProportion: proportion of samples to use for training
+rf_splitTraining_performance_withImportance_categorical <- function(data, variables, title, trainIndices = NULL, iterations = 100, trainProportion = 0.8, modelType = "rf", plotAUC = FALSE, plotImportances = FALSE, plotPDP= FALSE, plotResult = FALSE){
+
+  trainSize <- trainProportion*nrow(data)
+  aucDf <- data.frame()
+
+  # change the column names of unknown trnL data sequences to be unique
+  numUnknowns <- sum(colnames(data) == "NA.NA.")
+  colnames(data)[(colnames(data) == "NA.NA.")] <- sprintf("UnknownNumber%s",seq(1:numUnknowns))
+
+  pb <- txtProgressBar(min=0,max=1, initial = 0, style=3)
+  count <- 0
+  
+  for(variable in variables){
+    # remove all variables we don't care about for this particular model
+    currentData <- data %>% 
+      select(-variables[variables != variable])
+    f <- as.formula(paste0(variable, " ~ ."))
+    
+    # make sure the variable is a valid name
+    currentData[,variable]<- make.names(currentData[,variable]) %>% 
+      factor()
+    
+    aucVals <- c()
+    importanceDf <- data.frame()
+
+    # update progress
+    setTxtProgressBar(pb, count/length(variables))
+    cumulativeConfusionMatrix <- 0
+    
+    for(i in 1:iterations){
+      # Create training and test splits on the data
+      trainInd <- vector()
+      count <- 0
+  
+      # assign trainInd randomly or use the user-supplied indices
+      if(is.null(trainIndices)){
+        # trainInd <- sample(seq(0,nrow(data)), trainSize)
+        trainInd <- createDataPartition(data[,variable], p = trainProportion, 
+                          list = FALSE, 
+                          times = 1)
+      }
+      else{
+        trainInd <- trainIndices
+      }
+      
+      # split data into a test and training set
+      train <- currentData[trainInd,] 
+      test <- currentData[-trainInd,] 
+      
+      # Train the model 
+      # for now use 5-fold CV to do HP tuning
+      fitControl <- trainControl(method = "CV", # can try changing this around in the future
+                                 number = 5,
+                                 summaryFunction = prSummary,
+                                 classProbs = T)
+      rf <- train(f, data = train,
+                  method = modelType,
+                  trControl = fitControl,
+                  verbose = FALSE, 
+                  metric = "AUC")
+      
+      # predict on the test set and evaluate predictions
+      predProbs <- predict(rf, newdata = test, type = "prob")
+      predLabels <- predict(rf, newdata = test)
+
+      # Summarize confusion matrix on test data
+      confusion <- confusionMatrix(data = predLabels, reference =test[,variable],
+                                   mode = "prec_recall")
+      cumulativeConfusionMatrix <- cumulativeConfusionMatrix + confusion$table
+      
+      
+      obs <- data.frame(obs = test[,variable])
+      probDf <- cbind(predProbs, obs)
+      
+      plots <- evalm(probDf, showplots = FALSE, silent = TRUE)
+      aucVals <- append(aucVals, plots$stdres$`Group1`[13,1])# 13th position in this array shows the AUC-ROC score
+      
+      # Store the scaled importance values
+      importances <- varImp(rf)$importance %>% 
+        as.matrix %>% 
+        t()
+
+      # compile importances across iterations
+      importanceDf <- rbind(importanceDf, importances)
+      
+    }
+    
+    # print the cumulative confusion table results
+    print("----------------------")
+    print(variable)
+    print(cumulativeConfusionMatrix)
+    
+    
+    # update count variable
+    count <- count + 1
+    
+    # store aucVals in the master correlation df
+    newAUCColumn <- aucVals %>% 
+      as.matrix() %>%
+      t() %>%
+      data.frame()
+    rownames(newAUCColumn) <- variable
+    aucDf <- rbind(aucDf, newAUCColumn)
+  
+    # analyze the importances
+    if(plotPDP){
+      plotImportances(importanceDf, model = rf, title = variable, plotImportances = plotImportances, plotPDP = plotPDP)
+
+    }
+    else{
+      plotImportances(importanceDf, title = variable, plotImportances = plotImportances, plotPDP = plotPDP)
+
+    }
+  }
+  
+  
+  if(plotResult){
+  # plot the resulting data into a box plot
+    p <- ggplot(melt(aucDf), aes(y = value, x = variable)) +
+      geom_boxplot() +
+      labs(x = "Food Group", y = "AUC", title = title) + 
+      ylim(0,1)
+    print(p)
+  }
+  
+  # transpose final result so it is compatible with the t.test code. Need columns to be variables and rows to be iterations
+  return(auc = aucDf %>% t())
+}
+```
