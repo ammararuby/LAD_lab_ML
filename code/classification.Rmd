@@ -141,3 +141,148 @@ rf_splitTraining_performance_withImportance_categorical <- function(data, variab
   return(auc = aucDf %>% t())
 }
 ```
+
+
+# Non-caret - Ben
+
+```{r}
+set.seed(12345) # Random seed, keep this to obtain the same figure as in the paper
+
+# Create empty objects to be loaded with output statistics
+importanceDf <- data.frame()
+accuracy <- c()
+kappa <- c()
+pvals <- c()
+auc <- c()
+roc.data <- data.frame()
+
+# isolate just the variable we care about here - flatulence
+clr <- df_i2_s2_clr_asv %>% 
+  select(-"most_frequent_stool_bin", -"GI_discomfort_caused_bin", -"abdominal_pain_bin", -"bloating_bin", -"borborygmi_bin", -"ae_total_bin")
+
+# Iterate through the random forest model 100 times
+for (i in 1:100){
+
+  data <- clr
+  rows <- sample(nrow(clr)) # randomly shuffle rows of the dataset to create additional variation between iterations
+  data <- data[rows,]
+  
+  # Train the model
+  fitControl <- trainControl(method = "LOOCV",
+                             summaryFunction = prSummary,
+                             classProbs = T,
+                             savePredictions = TRUE) 
+  rf <- train(flatulence_bin ~ ., data = data,
+              method = "rf",
+              trControl = fitControl,
+              tuneGrid = expand.grid(.mtry=sqrt(ncol(data)-1)), # default val of sqrt(# features)
+              verbose = FALSE)
+  
+  # Store the scaled importance values
+  importances <- varImp(rf)$importance %>% as.matrix %>% t()
+  
+  # Summarize confusion matrix
+  confusion <- confusionMatrix(data = rf$pred$pred, reference = rf$pred$obs,
+                               mode = "prec_recall", positive = "upper")
+  
+  # Compile resulting metrics
+  importanceDf <- rbind(importanceDf, importances)
+  accuracy <- append(accuracy, confusion$overall["Accuracy"])
+  kappa <- append(kappa, confusion$overall["Kappa"])
+  pvals <- append(pvals, confusion$overall["AccuracyPValue"])
+  
+  # Compile data for plotting ROC curve
+  plots <- evalm(rf, silent = TRUE, plots=FALSE)
+  roc.data.tmp <- data.frame(SENS=plots$roc$data$SENS, FPR=plots$roc$data$FPR,
+                             point=1:19, iteration=paste0("iteration", i))
+  roc.data <- rbind(roc.data, roc.data.tmp)
+  auc <- append(auc, plots$stdres$`Group 1`[13,1])
+
+  # Print out how far through the iterations we are
+  print(paste0(i, "/100 iterations complete"))
+}
+
+
+```
+
+## Summarize metrics across all iterations
+
+```{r}
+mean(accuracy)
+mean(kappa)
+mean(pvals)
+mean(auc)
+
+# Summary ROC plot
+roc.avg <- roc.data[,1:3] %>%
+  gather(key=variable, value=val, 1:2) %>%
+  group_by(variable, point) %>%
+  summarize(mean=mean(val)) %>%
+  spread(key=variable, value=mean)
+
+roc.plot <- ggplot(roc.data, aes(x=FPR, y=SENS, group=iteration)) +
+  geom_line(color="red", alpha=0.2) +
+  geom_line(data=roc.avg, aes(x=FPR, y=SENS), inherit.aes = F, color="black", size=1) +
+  theme_bw() +
+  labs(x="False Positive Rate", y="True Positive Rate") +
+  geom_abline(intercept = 0, slope = 1, color="darkgray") +
+  # annotate(geom="text", x=0.7, y=0.25, label=paste0("Mean AUC = ", round(mean(auc), 3), "\n",
+  #                                                    "Mean Accuracy = ", round(mean(accuracy), 3), "\n",
+  #                                                    "Mean Kappa = ", round(mean(kappa),3), "\n"),
+  #          size=2.8)
+  annotate(geom="text", x=0.7, y=0.25, label=paste0("Mean AUC = ", round(mean(auc), 3), "\n"),
+           size=2.8)
+ggsave("ROC_flatulence.pdf", roc.plot, height=3, width=3, dpi = 600)
+```
+
+Plot most important taxa for these classifiers
+```{r}
+# calculate average importance across runs and then sort the data
+avgImportances <- importanceDf %>% 
+  colMeans() %>% 
+  sort(decreasing = TRUE) %>%
+  .[1:10] # select top 10 taxa
+
+importantTaxa <- names(avgImportances)
+taxaNames <- tax_table(ps.clr)[importantTaxa,] %>% data.frame()
+taxaNames$Species[is.na(taxaNames$Species)] <- "sp."
+
+taxaNames <- taxaNames[,c("Genus", "Species")]
+taxaNames <- paste0(taxaNames$Genus, " ", taxaNames$Species)
+
+top10 <- data.frame(tax=names(avgImportances), importance=avgImportances, binom = taxaNames)
+top10$binom <- factor(top10$binom, levels=rev(top10$binom))
+
+# Importance plot
+ggplot(top10, aes(x=importance, y=binom)) +
+  geom_point() +
+  theme_bw() +
+  labs(x="Importance", y=NULL) +
+  theme(axis.text.y=element_text(size=6))
+
+# CLR plot
+clr.select <- clr[,colnames(clr) %in% c("flatulence_bin", rownames(top10))]
+clr.select <- rownames_to_column(clr.select)
+colnames(clr.select) <- c("rowname", taxaNames, "flatulence_bin")
+clr.select <- melt(clr.select, id.vars = c("rowname","flatulence_bin"))
+
+
+clr.summary <- clr.select %>%
+  group_by(flatulence_bin, variable) %>%
+  summarize(mean_clr=mean(value), se=sd(value)/sqrt(length(value)))
+
+clr.plot <- ggplot(clr.select, aes(x=value, y=variable, group=flatulence_bin, color=flatulence_bin)) +
+  geom_point(position=position_jitter(height=0.1), alpha=0.5, size=0.5) +
+  geom_errorbar(data=clr.summary, aes(y=variable, xmin=mean_clr, xmax=mean_clr, group=flatulence_bin, color=flatulence_bin),
+                size=0.75, width=0.6, inherit.aes = F) +
+    geom_errorbar(data=clr.summary, aes(y=variable, xmin=mean_clr-se, xmax=mean_clr+se, group=flatulence_bin, color=flatulence_bin),
+                size=0.75, width=0.3, inherit.aes = F) +
+  scale_color_discrete(labels = c("Low", "High"))+
+  theme_bw() +
+  labs(x="\u0394CLR(Relative Abundance)", y=NULL, color="Flatulence Level") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+
+
+clr.plot
+```
+
