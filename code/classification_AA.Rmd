@@ -1,0 +1,220 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Libraries
+
+```{r}
+library(caret)
+library(randomForest)
+library(MButils)
+library(pROC)
+```
+
+# Load data
+
+I am using the AHA dataset for writing my code because it is the simplest dataset I can work with.
+Simplest = significant number of baseline samples without issue of repeated measures, balanced distribution of classes, likely difference to be detected present.
+
+
+```{r}
+a_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/AHA/220714_MN00462_0226_A000H3WKM5/20221110_results/ps_objects/AHA_trnl_with_metadata_20221205.rds")
+
+a_ps
+```
+
+# Preprocess
+
+## Remove problematic samples
+
+Taking out samples that are not listed to have completed the study and samples with more than 0 reads reduces samples from 95 down to 77.
+
+Taking only the baseline timepoint brings further down to 44 samples
+
+```{r}
+a_ps = a_ps %>%
+  subset_samples(completion == "Completed" & reads >0) %>%
+  subset_samples(timepoint == "Baseline")
+
+a_ps
+```
+
+Class distribution in this dataset:
+Case = 20
+Control = 24
+
+```{r}
+sample_data(a_ps) %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  group_by(group) %>%
+  summarise(count = n())
+```
+Removing completely unassigned taxa reduces taxa from 235 to 82.
+
+```{r}
+a_ps = a_ps %>%
+  subset_taxa(is.na(superkingdom) == FALSE)
+
+a_ps
+```
+
+## Data transform
+
+```{r}
+otu_clr = abundances(a_ps, "clr") %>% # rclr transform could not be performed, get Nans
+  t()
+
+a_ps = phyloseq(otu_table(otu_clr, taxa_are_rows = FALSE),
+                   sample_data(sample_data(a_ps)),
+                   tax_table(tax_table(a_ps)))
+
+rm(otu_clr)
+```
+
+## Feature table
+
+### Extract data
+```{r}
+features = a_ps@otu_table %>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample")
+
+feature_labels = c("sample")
+
+names = tax_table(a_ps) %>% 
+     data.frame() %>% 
+     lowest_level() %>%
+  pull(name)
+
+feature_labels = append(feature_labels, names)
+
+feature_labels = make.unique(feature_labels)
+
+colnames(features) = feature_labels
+
+features
+```
+### Zero variance features
+
+No features have zero variance
+```{r}
+nzv = features %>%
+  select(!sample) %>%
+  nearZeroVar(saveMetrics = TRUE)
+```
+```{r}
+rm(nzv)
+```
+
+### Correlated predictors
+
+```{r}
+feature_cor = features %>%
+ select(!sample) %>%
+ cor() 
+
+summary(feature_cor[upper.tri(feature_cor)])
+```
+
+```{r}
+high_cor = findCorrelation(feature_cor, cutoff = .75)
+
+filtered_features = features[,-high_cor]
+```
+
+```{r}
+rm(high_cor)
+rm(feature_cor)
+```
+
+### Linear dependencies
+
+```{r}
+feature_ld = filtered_features %>%
+  select(!sample) %>%
+  findLinearCombos()
+
+filtered_features = filtered_features[, - feature_ld$remove]
+```
+
+## Input table
+```{r}
+sample_labels = a_ps@sam_data%>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample") %>%
+  select(sample, group) %>%
+  mutate(group_shuffle = sample(group))
+
+input = sample_labels %>%
+  left_join(filtered_features)
+```
+
+# Data splitting
+
+```{r}
+set.seed(3456)
+train_ind = createDataPartition(input$group, p = .7, 
+                                  list = FALSE, 
+                                  times = 1)
+
+train = input[train_ind,]
+test = input[-train_ind,]
+
+```
+# Model 
+
+## Training
+
+```{r}
+fit_control = trainControl(method = "CV",
+                                 number = 5,
+                                 summaryFunction = prSummary,
+                                 classProbs = T)
+
+model = train(group ~ ., 
+              data = select(train, -c(sample, group_shuffle)),
+                  method = "rf",
+                  trControl = fit_control,
+                  verbose = FALSE, 
+                  metric = "AUC")
+```
+
+## Predictions
+```{r}
+predictions = predict(model, newdata = select(test, -c(group, group_shuffle, sample)), type= "prob")
+
+predictions$observed = test$group
+
+predictions
+
+predictions = predictions %>%
+  mutate(prediction = ifelse(Control > Case, "Control", "Case"),
+         pred_num = ifelse(prediction == "Control", 1, 0),
+         obs_num = ifelse(observed == "Control", 1, 0))
+```
+
+## Metrics
+```{r}
+cf = confusionMatrix(data = as.factor(predictions$prediction), reference =as.factor(predictions$observed))
+
+cf
+```
+
+```{r}
+result_roc = roc(response = predictions$obs_num, predictor = predictions$Control, auc=TRUE)
+
+plot(result_roc, print.thres="best", print.thres.best.method="closest.topleft")
+
+result_coords = coords(result_roc, "best", best.method="closest.topleft", ret=c("threshold", "accuracy"))
+```
+
+
+
+
+
+
+
