@@ -54,6 +54,12 @@ sample_data(a_ps) %>%
   group_by(group) %>%
   summarise(count = n())
 ```
+## Remove unassigned taxa
+
+Debating whether this should be done for machine learning. Because we are simply throwing out because we don't know what there are and even if they account for a small percentage of reads, they might still have important information.
+
+I think I will refrain from removing unless I have a good reason to.
+
 Removing completely unassigned taxa reduces taxa from 235 to 82.
 
 ```{r}
@@ -94,7 +100,8 @@ names = tax_table(a_ps) %>%
 
 feature_labels = append(feature_labels, names)
 
-feature_labels = make.unique(feature_labels)
+feature_labels = make.unique(feature_labels) %>%
+  make.names()
 
 colnames(features) = feature_labels
 
@@ -243,6 +250,7 @@ result_coords = coords(result_roc, "best", best.method="closest.topleft", ret=c(
 
 ### Variable importances
 
+I need to make this more robust. Probably better to have as input column names stay as ASVs and then join back to common names at the end. Will ensure I know what the actual taxa are.
 ```{r}
 asv = varImp(model$finalModel) %>%
   arrange(desc(Overall)) %>%
