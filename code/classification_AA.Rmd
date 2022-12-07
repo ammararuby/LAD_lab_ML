@@ -227,14 +227,7 @@ library(MLeval)
 ```
 
 
-Caret does not seem to have built-in ROC curve or precrision recall curve plotting features.
-
-```{r}
-# Caret functions
-twoClassSummary(predictions, lev = levels(predictions$obs))
-
-prSummary(predictions, lev = levels(predictions$obs))
-```
+Caret does not seem to have built-in ROC curve or precision recall curve plotting features.
 
 ```{r}
 evalm(predictions)
@@ -243,6 +236,7 @@ evalm(predictions)
 ### Variable importances
 
 I need to make this more robust. Probably better to have as input column names stay as ASVs and then join back to common names at the end. Will ensure I know what the actual taxa are.
+
 ```{r}
 asv = varImp(model$finalModel) %>%
   arrange(desc(Overall)) %>%
@@ -254,6 +248,14 @@ asv
 # Backup Code
 
 ## ROC curves
+
+```{r}
+# Caret functions
+twoClassSummary(predictions, lev = levels(predictions$obs))
+
+prSummary(predictions, lev = levels(predictions$obs))
+```
+
 ```{r}
 # Non-caret functions
 result_roc = roc(response = predictions$obs, predictor = predictions$Control, auc=TRUE)
