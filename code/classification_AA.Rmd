@@ -200,14 +200,11 @@ model
 ```{r}
 predictions = predict(model, newdata = select(test, -c(group, group_shuffle, sample)), type= "prob")
 
-predictions$obs = test$group
+labels = predict(model, newdata = select(test, -c(group, group_shuffle, sample))) %>%
+  as.factor
 
-predictions = predictions %>%
-  mutate(pred = ifelse(Control > Case, "Control", "Case"),
-         pred_num = ifelse(pred == "Control", 1, 0),
-         obs_num = ifelse(obs == "Control", 1, 0),
-         pred = as.factor(pred),
-         obs = as.factor(obs))
+predictions$obs = test$group %>%
+  as.factor()
 
 predictions
 ```
@@ -217,7 +214,7 @@ predictions
 ### Confusion matrix
 
 ```{r}
-cf = confusionMatrix(data = as.factor(predictions$pred), reference =as.factor(predictions$obs))
+cf = confusionMatrix(data = labels, reference =as.factor(predictions$obs), mode = "prec_recall")
 
 cf
 ```
@@ -226,6 +223,7 @@ cf
 
 ```{r}
 library(MLmetrics)
+library(MLeval)
 ```
 
 
@@ -238,14 +236,8 @@ twoClassSummary(predictions, lev = levels(predictions$obs))
 prSummary(predictions, lev = levels(predictions$obs))
 ```
 
-
 ```{r}
-# Non-caret functions
-result_roc = roc(response = predictions$obs_num, predictor = predictions$Control, auc=TRUE)
-
-plot(result_roc, print.thres="best", print.thres.best.method="closest.topleft")
-
-result_coords = coords(result_roc, "best", best.method="closest.topleft", ret=c("threshold", "accuracy"))
+evalm(predictions)
 ```
 
 ### Variable importances
@@ -259,7 +251,17 @@ asv = varImp(model$finalModel) %>%
 asv
 ```
 
+# Backup Code
 
+## ROC curves
+```{r}
+# Non-caret functions
+result_roc = roc(response = predictions$obs, predictor = predictions$Control, auc=TRUE)
+
+plot(result_roc, print.thres="best", print.thres.best.method="closest.topleft")
+
+result_coords = coords(result_roc, "best", best.method="closest.topleft", ret=c("threshold", "accuracy"))
+```
 
 
 
