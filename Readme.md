@@ -1,1 +1,1 @@
-Starting a new reporistory for collaborating on ML code.
+Starting a new repository for collaborating on ML code.
