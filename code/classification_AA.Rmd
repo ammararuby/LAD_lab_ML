@@ -254,42 +254,107 @@ asv
 input = input %>%
   select(-c(sample, group_shuffle))
 ```
-
-
+## testing
 ```{r}
 # testing function
 
 label = "group"
+label_list = c("group", "group_shuffle")
 input_cf = 0
 auc_list = c()
 importance_df = data.frame()
 percent = 0.7
+iterations = 2
 
-results_2 = loop_model(iterations = 2, input, label, percent, input_cf, auc_list, importance_df)
+results_2 = loop_model(iterations = 2, current_data, label, percent, input_cf, auc_list, importance_df)
 
 results
 
-results_2
+results[[1]]
+
+results_2[[2]]
 
 # The function is working!
 ```
 
+```{r}
+results = loop_label(iterations = 2, input, label_list = c("group", "group_shuffle"), percent = 0.7)
 
+input
+```
+
+## loop_label
+```{r}
+loop_label = function(iterations, input, label_list, percent){
+  
+  #Initialize results
+  
+  auc_df = data.frame(row = 1:iterations)
+  #cf_list = list()
+  results_compile = list()
+  
+  #Label loop
+  
+  for(label in label_list){
+    
+    # Remove labels not being tested in this iteration
+    
+    current_data = input %>%
+      select(-label_list[label_list != label]) %>%
+      select(-sample)
+  
+    # Initialize results
+    
+    input_cf = 0
+    auc_list = c()
+    importance_df = data.frame()
+  
+    #Model loop
+    
+    results = loop_model(iterations, current_data, label, percent, input_cf, auc_list, importance_df)
+    
+    # Print cummulative confusion matrix
+    
+    # print(label) # eventually want to make this a result that is stored instead of printing like this.
+    # print(results[[1]])
+    
+    # Store AUC values in cummulative dataframe
+    
+    auc_df = auc_df %>%
+      cbind(results[[2]])
+    
+    # After this Ben has functions to plot importances- I will need to code.
+    
+    # After this Ben plots AUCs, I will plot outside the function
+    
+    # Returning results from all labels
+    
+    results_compile = results_compile %>%
+      append(results)
+  }
+  
+  final = list(results_compile, auc_df)
+  
+  return(final)
+}
+```
+
+##loop_model
 ```{r}
 # remove extraneous columns from input before putting into this function
 
-loop_model = function(iterations, input, label, percent = 0.7, input_cf, auc_list, importance_df){
+loop_model = function(iterations, current_data, label, percent = 0.7, input_cf, auc_list, importance_df){
   
   for (i in 1:iterations) {
     
     # Data splitting
-    train_ind = caret::createDataPartition((input %>%
+    train_ind = caret::createDataPartition((current_data %>%
       pull(label)), #split based on label column
                                      p = percent,
                                      list = FALSE,
                                      times = 1)
-    train = input[train_ind,]
-    test = input[-train_ind,]
+    train = current_data[train_ind,]
+    test = current_data[-train_ind,]
     
     # Training model
     formula = label %>%
@@ -338,8 +403,18 @@ loop_model = function(iterations, input, label, percent = 0.7, input_cf, auc_lis
     importance_df = rbind(importance_df, feature_importance)
     
   }
- 
-  # Join all the result elements together in a list: cf, auc vector, importance df
+  
+  #Naming all results with appropriate label
+  
+  input_cf = list(label, input_cf)
+  
+  auc_list = auc_list %>% as.data.frame()
+  colnames(auc_list) = label
+  
+  importance_df = importance_df %>%
+    mutate(variable = label)
+  
+  #Join all the result elements together in a list: cf, auc vector, importance df
   results_list = list(input_cf, auc_list, importance_df)
   
   return(results_list) 
