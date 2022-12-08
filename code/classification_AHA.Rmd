@@ -61,13 +61,15 @@ Debating whether this should be done for machine learning. Because we are simply
 
 I think I will refrain from removing unless I have a good reason to.
 
+Don't do this because some very important taxa for ML model turned out to be unassigned. - 12/8/22
+
 Removing completely unassigned taxa reduces taxa from 235 to 82.
 
 ```{r}
-a_ps = a_ps %>%
-  subset_taxa(is.na(superkingdom) == FALSE)
-
-a_ps
+# a_ps = a_ps %>%
+#   subset_taxa(is.na(superkingdom) == FALSE)
+# 
+# a_ps
 ```
 
 ## Data transform
@@ -86,6 +88,8 @@ rm(otu_clr)
 ## Feature table
 
 ### Extract data
+
+Order of asv colnames in OTU table and tax table is the same.
 ```{r}
 features = a_ps@otu_table %>%
   as.data.frame() %>%
@@ -94,17 +98,17 @@ features = a_ps@otu_table %>%
 
 feature_labels = c("sample")
 
-names = tax_table(a_ps) %>% 
-     data.frame() %>% 
-     lowest_level() %>%
-  pull(name)
+ names = tax_table(a_ps) %>%
+      data.frame() %>%
+      lowest_level() %>%
+   pull(name)
 
-feature_labels = append(feature_labels, names)
+ feature_labels = append(feature_labels, names)
 
-feature_labels = make.unique(feature_labels) %>%
-  make.names()
+ feature_labels = make.unique(feature_labels) %>%
+   make.names()
 
-colnames(features) = feature_labels
+ colnames(features) = feature_labels
 
 features
 ```
@@ -172,43 +176,106 @@ Load functions from classification_function_AA file
 ```{r}
 label_list = c("group", "group_shuffle")
 results = loop_label(iterations = 10, input, label_list, percent = 0.7)
+
+auc_df = results[[2]]
+
+importance_df = results[[1]]
+```
+```{r}
+rm(label_list)
 ```
 
 # Plotting
 
-Create visualization functions or code.
+## AUC plot and t-test
 ```{r}
-results[[2]] %>%
+auc_df %>%
   pivot_longer(cols = c("group", "group_shuffle"), names_to = "feature", values_to = "AUC") %>%
   ggplot()+
   geom_boxplot(aes(x=feature, y = AUC))+
   theme_classic()
 
-t.test(results[[2]]$group, results[[2]]$group_shuffle)
+t.test(auc_df$group, auc_df$group_shuffle)
 
 ```
 
+## Importance plots
+
+### look-up table
 ```{r}
-importance_summary = results[[1]] %>%
-  pivot_longer(cols = c("Rosaceae.1":"Brassica.oleracea"), names_to = "food", values_to = "importance") %>%
+#Making asv reference for names in model
+lookup_asv = tax_table(a_ps) %>% 
+     data.frame() %>%
+      lowest_level() %>%
+   rownames_to_column("asv") %>% 
+   select(asv, name) %>%
+   mutate(name = make.names(make.unique(name)))
+```
+
+### summarize importances
+```{r}
+# Making summary df of importances
+importance_summary = importance_df %>%
+  pivot_longer(cols = c("Musa":"Pistacia.vera"), names_to = "food", values_to = "importance") %>%
   group_by(variable, food) %>%
   summarise(mean_importance = mean(importance)) %>%
   arrange(variable, desc(mean_importance))
-
+```
+### top 10 ranked list
+```{r}
+# Getting the ranked list
 ranking = importance_summary %>%
   filter(variable == "group") %>%
   pull(food)
 
 top10 = ranking[1:10]
-  
-results[[1]] %>%
-  pivot_longer(cols = c("Rosaceae.1":"Brassica.oleracea"), names_to = "food", values_to = "importance") %>% 
+```
+
+### Importance plot
+```{r}
+importance_df %>%
+  pivot_longer(cols = c("Musa":"Pistacia.vera"), names_to = "food", values_to = "importance")  %>%
   filter(variable == "group" & food %in% top10) %>%
   ggplot()+
   geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
   labs(x= "Food", y ="Importance") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+Some of the important NAs for predictions only map to bacterial species in BLAST.
+
+# Important taxa directions
+
+```{r}
+input %>%
+  select(group, Theobroma.cacao) %>%
+  ggplot()+
+  geom_boxplot(aes(x= group, y= Theobroma.cacao))+
+  theme_classic()
+
+input %>%
+  select(group, Lauraceae) %>%
+  ggplot()+
+  geom_boxplot(aes(x= group, y= Lauraceae))+
+  theme_classic()
+
+input %>%
+  select(group, Rosaceae.1) %>%
+  ggplot()+
+  geom_boxplot(aes(x= group, y= Rosaceae.1))+
+  theme_classic()
+
+sample_data(a_ps) %>%
+  data.frame() %>%
+  ggplot() +
+  geom_boxplot(aes(x= group, y = baseline_bmi))+
+  theme_classic()
+```
+```{r}
+lookup_asv %>%
+  filter(name == "NA.2") %>%
+  pull(asv)
 ```
 
 

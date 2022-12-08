@@ -73,9 +73,9 @@ loop_label = function(iterations, input, label_list, percent){
 ## testing loop_label
 
 ```{r}
-label_list = c("group", "group_shuffle")
-
-results = loop_label(iterations = 2, input, label_list, percent = 0.7)
+# label_list = c("group", "group_shuffle")
+# 
+# results = loop_label(iterations = 2, input, label_list, percent = 0.7)
 ```
 
 
@@ -178,15 +178,15 @@ loop_model = function(iterations, current_data, label, percent = 0.7, input_cf, 
 ## testing loop_model
 
 ```{r}
-label = "group"
-input_cf = 0
-auc_list = c()
-importance_df = data.frame()
-percent = 0.7
-iterations = 2
-
-current_data = input %>%
-  select(-c(sample, group_shuffle))
-
-results = loop_model(iterations = 2, current_data, label, percent, input_cf, auc_list, importance_df)
+# label = "group"
+# input_cf = 0
+# auc_list = c()
+# importance_df = data.frame()
+# percent = 0.7
+# iterations = 2
+# 
+# current_data = input %>%
+#   select(-c(sample, group_shuffle))
+# 
+# results = loop_model(iterations = 2, current_data, label, percent, input_cf, auc_list, importance_df)
 ```
