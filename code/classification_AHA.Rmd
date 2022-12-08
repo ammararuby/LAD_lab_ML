@@ -175,12 +175,13 @@ Load functions from classification_function_AA file
 
 ```{r}
 label_list = c("group", "group_shuffle")
-results = loop_label(iterations = 10, input, label_list, percent = 0.7)
+results = loop_label(iterations = 20, input, label_list, percent = 0.7)
 
 auc_df = results[[2]]
 
 importance_df = results[[1]]
 ```
+
 ```{r}
 rm(label_list)
 ```
@@ -216,7 +217,7 @@ lookup_asv = tax_table(a_ps) %>%
 ```{r}
 # Making summary df of importances
 importance_summary = importance_df %>%
-  pivot_longer(cols = c("Musa":"Pistacia.vera"), names_to = "food", values_to = "importance") %>%
+  pivot_longer(cols = c("NA.1":"Solanum.lycopersicum"), names_to = "food", values_to = "importance") %>%
   group_by(variable, food) %>%
   summarise(mean_importance = mean(importance)) %>%
   arrange(variable, desc(mean_importance))
@@ -225,7 +226,7 @@ importance_summary = importance_df %>%
 ```{r}
 # Getting the ranked list
 ranking = importance_summary %>%
-  filter(variable == "group") %>%
+  filter(variable == "group_shuffle") %>%
   pull(food)
 
 top10 = ranking[1:10]
@@ -234,8 +235,8 @@ top10 = ranking[1:10]
 ### Importance plot
 ```{r}
 importance_df %>%
-  pivot_longer(cols = c("Musa":"Pistacia.vera"), names_to = "food", values_to = "importance")  %>%
-  filter(variable == "group" & food %in% top10) %>%
+  pivot_longer(cols = c("NA.1":"Solanum.lycopersicum"), names_to = "food", values_to = "importance")  %>%
+  filter(variable == "group_shuffle" & food %in% top10) %>%
   ggplot()+
   geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
   labs(x= "Food", y ="Importance") +
@@ -248,33 +249,19 @@ Some of the important NAs for predictions only map to bacterial species in BLAST
 # Important taxa directions
 
 ```{r}
-input %>%
-  select(group, Theobroma.cacao) %>%
-  ggplot()+
-  geom_boxplot(aes(x= group, y= Theobroma.cacao))+
-  theme_classic()
-
-input %>%
-  select(group, Lauraceae) %>%
-  ggplot()+
-  geom_boxplot(aes(x= group, y= Lauraceae))+
-  theme_classic()
-
-input %>%
-  select(group, Rosaceae.1) %>%
-  ggplot()+
-  geom_boxplot(aes(x= group, y= Rosaceae.1))+
-  theme_classic()
-
 sample_data(a_ps) %>%
   data.frame() %>%
   ggplot() +
   geom_boxplot(aes(x= group, y = baseline_bmi))+
   theme_classic()
+
+plot_food_direction(top10, input)
 ```
+
+
 ```{r}
 lookup_asv %>%
-  filter(name == "NA.2") %>%
+  filter(name == "Carya") %>%
   pull(asv)
 ```
 

@@ -190,3 +190,24 @@ loop_model = function(iterations, current_data, label, percent = 0.7, input_cf, 
 # 
 # results = loop_model(iterations = 2, current_data, label, percent, input_cf, auc_list, importance_df)
 ```
+
+# Visualization
+
+```{r}
+#input = dataframe of features x labels (including sample names)
+# List of foods in order of model importance
+
+plot_food_direction = function(food_ranking, data) {
+ 
+  for(food in top10) {
+  plot = input %>%
+  select(group, food) %>%
+  ggplot()+
+  geom_boxplot(aes_string(x= "group", y= food))+
+  theme_classic() 
+  
+  print (plot)
+} 
+}
+```
+

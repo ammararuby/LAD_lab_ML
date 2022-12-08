@@ -1,0 +1,275 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Libraries
+
+```{r, include = FALSE}
+library(tidyverse)
+library(microbiome)
+library(phyloseq)
+library(caret)
+library(randomForest)
+library(MButils)
+library(MLeval)
+library(DMwR)
+```
+
+# Load data
+
+I am using the AHA dataset for writing my code because it is the simplest dataset I can work with.
+Simplest = significant number of baseline samples without issue of repeated measures, balanced distribution of classes, likely difference to be detected present.
+
+
+```{r}
+p_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/POMMS/R24_POMMS/data/processed/20221104_pomms_metadata_plant.rds")
+
+p_ps
+
+sample_data(p_ps)
+```
+
+# Preprocess
+
+## Remove problematic samples
+
+Taking out samples with less than or equal to 0 reads and keeping only entry timepoint reduces samples from 384 down to 240.
+
+```{r}
+p_ps = p_ps %>%
+  subset_samples( reads > 0) %>%
+  subset_samples(timepoint == "Entry")
+
+p_ps
+```
+
+Class distribution in this dataset:
+Case = 193
+Control = 47
+
+```{r}
+sample_data(p_ps) %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  group_by(group) %>%
+  summarise(count = n())
+```
+
+## Data transform
+
+```{r}
+otu_clr = abundances(p_ps, "clr") %>% # rclr transform could not be performed, get Nans
+  t()
+
+p_ps = phyloseq(otu_table(otu_clr, taxa_are_rows = FALSE),
+                   sample_data(sample_data(p_ps)),
+                   tax_table(tax_table(p_ps)))
+
+rm(otu_clr)
+```
+
+## Feature table
+
+### Extract data
+
+Order of asv colnames in OTU table and tax table is the same.
+```{r}
+features = p_ps@otu_table %>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample")
+
+feature_labels = c("sample")
+
+ names = tax_table(p_ps) %>%
+      data.frame() %>%
+      lowest_level() %>%
+   pull(name)
+
+ feature_labels = append(feature_labels, names)
+
+ feature_labels = make.unique(feature_labels) %>%
+   make.names()
+
+ colnames(features) = feature_labels
+
+features
+```
+### Attach data labels
+```{r}
+sample_labels = p_ps@sam_data%>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample") %>%
+  select(sample, group)
+
+features = sample_labels %>%
+  left_join(features)
+```
+#Subsampling: SMOTE
+
+```{r}
+smote_input = features %>%
+  select(-sample) %>%
+  mutate(group = as.factor(group)) %>%
+  as.data.frame()
+
+subsampled = SMOTE(group ~ ., data  = smote_input)
+
+subsampled%>%
+  group_by(group) %>%
+  summarise(count = n())
+```
+### Zero variance features
+
+No features have zero variance
+```{r}
+nzv = subsampled %>%
+  select(!group) %>%
+  nearZeroVar(saveMetrics = TRUE)
+```
+
+```{r}
+rm(nzv)
+```
+
+### Correlated predictors
+
+```{r}
+feature_cor = subsampled %>%
+ select(!group) %>%
+ cor() 
+
+summary(feature_cor[upper.tri(feature_cor)])
+```
+
+```{r}
+high_cor = findCorrelation(feature_cor, cutoff = .75)
+
+filtered_subsampled = subsampled[,-high_cor]
+```
+
+```{r}
+rm(high_cor)
+rm(feature_cor)
+```
+
+### Linear dependencies
+
+```{r}
+feature_ld = filtered_subsampled %>%
+  select(!group) %>%
+  findLinearCombos()
+
+filtered_subsampled = filtered_subsampled[, - feature_ld$remove]
+```
+
+## Input table
+
+Preprocessing reduces column number to 102 from 235
+
+```{r}
+input = filtered_subsampled %>%
+  mutate(group_shuffle = sample(group)) %>%
+  rownames_to_column("sample")
+```
+
+# Modeling
+
+Load functions from classification_function_AA file
+
+```{r}
+label_list = c("group", "group_shuffle")
+results = loop_label(iterations = 10, input, label_list, percent = 0.7)
+
+auc_df = results[[2]]
+
+importance_df = results[[1]]
+```
+
+```{r}
+rm(label_list)
+```
+
+# Plotting
+
+## AUC plot and t-test
+```{r}
+auc_df %>%
+  pivot_longer(cols = c("group", "group_shuffle"), names_to = "feature", values_to = "AUC") %>%
+  ggplot()+
+  geom_boxplot(aes(x=feature, y = AUC))+
+  theme_classic()
+
+t.test(auc_df$group, auc_df$group_shuffle)
+
+```
+
+## Importance plots
+
+### look-up table
+```{r}
+#Making asv reference for names in model
+lookup_asv = tax_table(p_ps) %>% 
+     data.frame() %>%
+      lowest_level() %>%
+   rownames_to_column("asv") %>% 
+   select(asv, name) %>%
+   mutate(name = make.names(make.unique(name)))
+```
+
+### summarize importances
+```{r}
+# Making summary df of importances
+importance_summary = importance_df %>%
+  pivot_longer(cols = c("Helianthus.annuus":"Rheum.rhaponticum"), names_to = "food", values_to = "importance") %>%
+  group_by(variable, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(variable, desc(mean_importance))
+```
+### top 10 ranked list
+```{r}
+# Getting the ranked list
+ranking = importance_summary %>%
+  filter(variable == "group_shuffle") %>%
+  pull(food)
+
+top10 = ranking[1:10]
+```
+
+### Importance plot
+```{r}
+importance_df %>%
+  pivot_longer(cols = c("Helianthus.annuus":"Rheum.rhaponticum"), names_to = "food", values_to = "importance")  %>%
+  filter(variable == "group_shuffle" & food %in% top10) %>%
+  ggplot()+
+  geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
+  labs(x= "Food", y ="Importance") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+Some of the important NAs for predictions only map to bacterial species in BLAST.
+
+# Important taxa directions
+
+```{r}
+sample_data(p_ps) %>%
+  data.frame() %>%
+  filter(timepoint == "Entry") %>%
+  ggplot() +
+  geom_boxplot(aes(x= group, y = bmi))+
+  theme_classic()
+
+plot_food_direction(top10, features)
+```
+
+
+```{r}
+lookup_asv %>%
+  filter(name == "Theobroma.cacao") %>%
+  pull(asv)
+```
+
+
