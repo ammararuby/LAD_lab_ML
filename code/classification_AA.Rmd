@@ -171,13 +171,44 @@ Load functions from classification_function_AA file
 
 ```{r}
 label_list = c("group", "group_shuffle")
-results = loop_label(iterations = 10, input, percent = 0.7)
+results = loop_label(iterations = 10, input, label_list, percent = 0.7)
 ```
 
 # Plotting
 
 Create visualization functions or code.
 ```{r}
+results[[2]] %>%
+  pivot_longer(cols = c("group", "group_shuffle"), names_to = "feature", values_to = "AUC") %>%
+  ggplot()+
+  geom_boxplot(aes(x=feature, y = AUC))+
+  theme_classic()
+
+t.test(results[[2]]$group, results[[2]]$group_shuffle)
 
 ```
+
+```{r}
+importance_summary = results[[1]] %>%
+  pivot_longer(cols = c("Rosaceae.1":"Brassica.oleracea"), names_to = "food", values_to = "importance") %>%
+  group_by(variable, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(variable, desc(mean_importance))
+
+ranking = importance_summary %>%
+  filter(variable == "group") %>%
+  pull(food)
+
+top10 = ranking[1:10]
+  
+results[[1]] %>%
+  pivot_longer(cols = c("Rosaceae.1":"Brassica.oleracea"), names_to = "food", values_to = "importance") %>% 
+  filter(variable == "group" & food %in% top10) %>%
+  ggplot()+
+  geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
+  labs(x= "Food", y ="Importance") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
 
