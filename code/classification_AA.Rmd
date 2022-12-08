@@ -5,13 +5,14 @@ output: html_notebook
 
 # Libraries
 
-```{r, echo = FALSE}
+```{r, include = FALSE}
 library(tidyverse)
 library(microbiome)
 library(phyloseq)
 library(caret)
 library(randomForest)
 library(MButils)
+library(MLeval)
 library(pROC)
 ```
 
@@ -176,6 +177,7 @@ train = input[train_ind,]
 test = input[-train_ind,]
 
 ```
+
 # Model 
 
 ## Training
@@ -249,6 +251,12 @@ asv
 # Function version
 
 ```{r}
+input = input %>%
+  select(-c(sample, group_shuffle))
+```
+
+
+```{r}
 # testing function
 
 label = "group"
@@ -257,7 +265,11 @@ auc_list = c()
 importance_df = data.frame()
 percent = 0.7
 
-results = loop_model(iterations = 2, input, label, percent, input_cf, auc_list, importance_df)
+results_2 = loop_model(iterations = 2, input, label, percent, input_cf, auc_list, importance_df)
+
+results
+
+results_2
 
 # The function is working!
 ```
@@ -271,7 +283,7 @@ loop_model = function(iterations, input, label, percent = 0.7, input_cf, auc_lis
   for (i in 1:iterations) {
     
     # Data splitting
-    train_ind = createDataPartition((input %>%
+    train_ind = caret::createDataPartition((input %>%
       pull(label)), #split based on label column
                                      p = percent,
                                      list = FALSE,
@@ -284,12 +296,12 @@ loop_model = function(iterations, input, label, percent = 0.7, input_cf, auc_lis
       paste0("~.") %>%
       as.formula()
     
-    fit_control = trainControl(method = "CV", # 5-fold cross validation
+    fit_control = caret::trainControl(method = "CV", # 5-fold cross validation
                                  number = 5,
                                  summaryFunction = prSummary,
                                  classProbs = T)
     
-    model = train(formula, #using formula specified 
+    model = caret::train(formula, #using formula specified 
               data = train,
                   method = "rf",
                   trControl = fit_control,
@@ -307,18 +319,18 @@ loop_model = function(iterations, input, label, percent = 0.7, input_cf, auc_lis
       as.factor() 
     
     # Confusion matrix
-    cf = confusionMatrix(data = pred_labels, reference =as.factor(predictions$obs), mode = "prec_recall")
+    cf = caret::confusionMatrix(data = pred_labels, reference =as.factor(predictions$obs), mode = "prec_recall")
     
     input_cf = input_cf + cf$table
     
     # Evaluate model
     
-    eval = evalm(predictions, showplots = FALSE, silent = TRUE)
+    eval = MLeval::evalm(predictions, showplots = FALSE, silent = TRUE)
     
     auc_list = append(auc_list, eval$stdres$`Group1`[13,1])
     
     #Extract feature importance
-    feature_importance = varImp(model$finalModel) %>% # Ben calls this importances instead of final model but the rankings are exactly the same, only number value scale is different.
+    feature_importance = caret::varImp(model$finalModel) %>% # Ben calls this importances instead of final model but the rankings are exactly the same, only number value scale is different.
       arrange(desc(Overall)) %>%
       as.matrix() %>%
       t()
