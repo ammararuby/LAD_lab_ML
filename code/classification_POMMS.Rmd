@@ -107,26 +107,28 @@ sample_labels = p_ps@sam_data%>%
 features = sample_labels %>%
   left_join(features)
 ```
+
 #Subsampling: SMOTE
 
 ```{r}
-smote_input = features %>%
-  select(-sample) %>%
-  mutate(group = as.factor(group)) %>%
-  as.data.frame()
-
-subsampled = SMOTE(group ~ ., data  = smote_input)
-
-subsampled%>%
-  group_by(group) %>%
-  summarise(count = n())
+# smote_input = features %>%
+#   select(-sample) %>%
+#   mutate(group = as.factor(group)) %>%
+#   as.data.frame()
+# 
+# subsampled = SMOTE(group ~ ., data  = smote_input)
+# 
+# subsampled%>%
+#   group_by(group) %>%
+#   summarise(count = n())
 ```
+
 ### Zero variance features
 
 No features have zero variance
 ```{r}
-nzv = subsampled %>%
-  select(!group) %>%
+nzv = features %>%
+  select(!c(sample,group)) %>%
   nearZeroVar(saveMetrics = TRUE)
 ```
 
@@ -137,8 +139,8 @@ rm(nzv)
 ### Correlated predictors
 
 ```{r}
-feature_cor = subsampled %>%
- select(!group) %>%
+feature_cor = features %>%
+  select(!c(sample,group)) %>%
  cor() 
 
 summary(feature_cor[upper.tri(feature_cor)])
@@ -147,7 +149,7 @@ summary(feature_cor[upper.tri(feature_cor)])
 ```{r}
 high_cor = findCorrelation(feature_cor, cutoff = .75)
 
-filtered_subsampled = subsampled[,-high_cor]
+filtered_features = features[,-high_cor]
 ```
 
 ```{r}
@@ -158,21 +160,20 @@ rm(feature_cor)
 ### Linear dependencies
 
 ```{r}
-feature_ld = filtered_subsampled %>%
-  select(!group) %>%
+feature_ld = filtered_features %>%
+  select(!c(sample,group)) %>%
   findLinearCombos()
 
-filtered_subsampled = filtered_subsampled[, - feature_ld$remove]
+filtered_features = filtered_features[, - feature_ld$remove]
 ```
 
 ## Input table
 
-Preprocessing reduces column number to 102 from 235
+Preprocessing reduces column number to 131 from 235
 
 ```{r}
-input = filtered_subsampled %>%
-  mutate(group_shuffle = sample(group)) %>%
-  rownames_to_column("sample")
+input = filtered_features %>%
+  mutate(group_shuffle = sample(group))
 ```
 
 # Modeling
@@ -181,7 +182,7 @@ Load functions from classification_function_AA file
 
 ```{r}
 label_list = c("group", "group_shuffle")
-results = loop_label(iterations = 10, input, label_list, percent = 0.7)
+results = loop_label(iterations =20, input, label_list, percent = 0.7, upsampling = TRUE)
 
 auc_df = results[[2]]
 
@@ -217,13 +218,15 @@ lookup_asv = tax_table(p_ps) %>%
    rownames_to_column("asv") %>% 
    select(asv, name) %>%
    mutate(name = make.names(make.unique(name)))
+
+features
 ```
 
 ### summarize importances
 ```{r}
 # Making summary df of importances
 importance_summary = importance_df %>%
-  pivot_longer(cols = c("Helianthus.annuus":"Rheum.rhaponticum"), names_to = "food", values_to = "importance") %>%
+  pivot_longer(cols = c("NA.3":"NA.2"), names_to = "food", values_to = "importance") %>%
   group_by(variable, food) %>%
   summarise(mean_importance = mean(importance)) %>%
   arrange(variable, desc(mean_importance))
@@ -232,7 +235,7 @@ importance_summary = importance_df %>%
 ```{r}
 # Getting the ranked list
 ranking = importance_summary %>%
-  filter(variable == "group_shuffle") %>%
+  filter(variable == "group") %>%
   pull(food)
 
 top10 = ranking[1:10]
@@ -241,8 +244,8 @@ top10 = ranking[1:10]
 ### Importance plot
 ```{r}
 importance_df %>%
-  pivot_longer(cols = c("Helianthus.annuus":"Rheum.rhaponticum"), names_to = "food", values_to = "importance")  %>%
-  filter(variable == "group_shuffle" & food %in% top10) %>%
+  pivot_longer(cols = c("NA.3":"NA.2"), names_to = "food", values_to = "importance")  %>%
+  filter(variable == "group" & food %in% top10) %>%
   ggplot()+
   geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
   labs(x= "Food", y ="Importance") +
@@ -262,7 +265,7 @@ sample_data(p_ps) %>%
   geom_boxplot(aes(x= group, y = bmi))+
   theme_classic()
 
-plot_food_direction(top10, features)
+plot_food_direction(top10, features, variable = "group")
 ```
 
 
@@ -270,6 +273,17 @@ plot_food_direction(top10, features)
 lookup_asv %>%
   filter(name == "Theobroma.cacao") %>%
   pull(asv)
+```
+
+
+```{r}
+cor_hel = feature_cor["Helianthus.annuus",] %>%
+  as.data.frame()
+
+colnames(cor_hel) = c("corr")
+
+cor_hel %>%
+  arrange(desc(corr))
 ```
 
 

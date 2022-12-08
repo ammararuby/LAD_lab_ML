@@ -16,7 +16,7 @@ output: html_notebook
 
 ####
 
-loop_label = function(iterations, input, label_list, percent){
+loop_label = function(iterations, input, label_list, percent, upsampling){
   
   #Initialize results
   
@@ -39,10 +39,14 @@ loop_label = function(iterations, input, label_list, percent){
     input_cf = 0
     auc_list = c()
     importance_df = data.frame()
+    
+    if(upsampling ==TRUE){
+      print("will upsample using smote on training data")
+    }
   
     #Model loop
     
-    results = loop_model(iterations, current_data, label, percent, input_cf, auc_list, importance_df)
+    results = loop_model(iterations, current_data, label, percent, input_cf, auc_list, importance_df, upsampling)
     
     # Print cummulative confusion matrix
     
@@ -95,18 +99,32 @@ loop_label = function(iterations, input, label_list, percent){
 ####
 
 
-loop_model = function(iterations, current_data, label, percent = 0.7, input_cf, auc_list, importance_df){
+loop_model = function(iterations, current_data, label, percent = 0.7, input_cf, auc_list, importance_df, upsampling){
   
   for (i in 1:iterations) {
     
     # Data splitting
     train_ind = caret::createDataPartition((current_data %>%
-      pull(label)), #split based on label column
+                                              pull(label)), #split based on labe column
                                      p = percent,
                                      list = FALSE,
                                      times = 1)
     train = current_data[train_ind,]
     test = current_data[-train_ind,]
+    
+    #Subsampling
+   
+    if(upsampling == TRUE){
+      train[[label]] = as.factor(train[[label]])
+      train = train %>%
+        as.data.frame()
+      
+      formula_smote = label %>%
+      paste0("~.") %>%
+      as.formula()
+      
+      train = SMOTE(formula_smote, data  = train)
+    }
     
     # Training model
     formula = label %>%
@@ -197,13 +215,13 @@ loop_model = function(iterations, current_data, label, percent = 0.7, input_cf, 
 #input = dataframe of features x labels (including sample names)
 # List of foods in order of model importance
 
-plot_food_direction = function(food_ranking, data) {
+plot_food_direction = function(food_ranking, data, variable) {
  
-  for(food in top10) {
-  plot = input %>%
-  select(group, food) %>%
+  for(food in food_ranking) {
+  plot = data %>%
+  select(variable, food) %>%
   ggplot()+
-  geom_boxplot(aes_string(x= "group", y= food))+
+  geom_boxplot(aes_string(x= variable, y= food))+
   theme_classic() 
   
   print (plot)
