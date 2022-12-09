@@ -5,18 +5,20 @@ output: html_notebook
 # ML classification functions
 
 ## loop_label
+
+Instructions
+This function takes in:
+
+iterations = number of iterations to run. Give as an integer. Eg. 2 or 3 or 4
+
+input = dataframe of features x labels (including sample names). Will automatically drop sample names and take one label of interest at a time when running model
+
+label_list = a vector of your label names as strings. Eg. c("group", "group_shuffle")
+
+percent = percentage of train to test. specify as a double. Eg. 0.6.
 ```{r}
-#### Instructions
 
-# This function takes in:
-# iterations = number of iterations to run. Give as an integer. Eg. 2 or 3 or 4
-# input = dataframe of features x labels (including sample names). Will automatically drop sample names and take one label of interest at a time when running model
-# label_list = a vector of your label names as strings. Eg. c("group", "group_shuffle")
-# percent = percentage of train to test. specify as a double. Eg. 0.6.
-
-####
-
-loop_label = function(iterations, input, label_list, percent, upsampling){
+loop_label = function(iterations, input, label_list, percent= 0.7, upsampling = FALSE, downsampling = FALSE){
   
   #Initialize results
   
@@ -39,10 +41,16 @@ loop_label = function(iterations, input, label_list, percent, upsampling){
     if(upsampling ==TRUE){
       print("will upsample using smote on training data")
     }
-  
+    
+    # Downsampling
+    
+    if(downsampling ==TRUE){
+      print("will downsample on training data")
+    }
+    
     #Model loop
     
-    results = loop_model(iterations, current_data, label, percent, upsampling)
+    results = loop_model(iterations, current_data, label, percent, upsampling, downsampling)
     
     # Print cummulative confusion matrix
     
@@ -80,22 +88,22 @@ loop_label = function(iterations, input, label_list, percent, upsampling){
 
 
 ##loop_model
+
+Instructions
+
+This function takes in:
+
+iterations = number of iterations to run. Give as an integer. Eg. 2 or 3 or 4
+
+current_data = dataframe of features x labels (only label of interest and no sample names).
+
+label = name of your label column. specified as a string. Eg. "group"
+
+percent = percentage of train to test. specify as a double. Eg. 0.6.
+
 ```{r}
-#### Instructions
 
-# This function takes in:
-# iterations = number of iterations to run. Give as an integer. Eg. 2 or 3 or 4
-# current_data = dataframe of features x labels (only label of interest and no sample names).
-# label = name of your label column. specified as a string. Eg. "group"
-# percent = percentage of train to test. specify as a double. Eg. 0.6.
-# input_cf = running object of confusionmatrices, will be 0 at the very start. Normally specified through loop_label. User will have to specify as 0 if running this function separately.
-# auc_list = running object of AUCs obtained over iterations, will be c() at the very start. Normally specified through loop_label. User will have to specify as c() if running this function separately.
-# importance_df = running object of variable importance dataframes obtained over iterations, will be data.frame() at the very start. Normally specified through loop_label. User will have to specify as data.frame() if running this function separately.
-
-####
-
-
-loop_model = function(iterations, current_data, label, percent, upsampling){
+loop_model = function(iterations, current_data, label, percent= 0.7, upsampling = FALSE, downsampling = FALSE){
   
   # Initialize results
     
@@ -114,7 +122,7 @@ loop_model = function(iterations, current_data, label, percent, upsampling){
     train = current_data[train_ind,]
     test = current_data[-train_ind,]
     
-    #Subsampling
+    #Upsampling
    
     if(upsampling == TRUE){
       train[[label]] = as.factor(train[[label]])
@@ -125,10 +133,20 @@ loop_model = function(iterations, current_data, label, percent, upsampling){
       paste0("~.") %>%
       as.formula()
       
-      train = SMOTE(formula_smote, data  = train)
+      train = DMwR::SMOTE(formula_smote, data  = train)
+    }
+    
+    # Downsampling
+    
+    if(downsampling == TRUE){
+      train = downSample(x = train,
+                         y = train[[label]])
+      train = train %>%
+        select(-Class)
     }
     
     # Training model
+    
     formula = label %>%
       paste0("~.") %>%
       as.formula()
@@ -146,6 +164,7 @@ loop_model = function(iterations, current_data, label, percent, upsampling){
                   metric = "AUC")
     
     # Model predictions
+    
     predictions = predict(model, newdata = test, type= "prob")
     
     pred_labels = predict(model, newdata = test)%>%
@@ -156,6 +175,7 @@ loop_model = function(iterations, current_data, label, percent, upsampling){
       as.factor() 
     
     # Confusion matrix
+    
     cf = caret::confusionMatrix(data = pred_labels, reference =as.factor(predictions$obs), mode = "prec_recall")
     
     input_cf = input_cf + cf$table
@@ -206,7 +226,7 @@ loop_model = function(iterations, current_data, label, percent, upsampling){
 # iterations = 2
 # 
 # current_data = input %>%
-#   select(-c(sample, group_shuffle))
+# select(-c(sample, group_shuffle))
 # 
 # results = loop_model(iterations = 2, current_data, label, percent, input_cf, auc_list, importance_df)
 ```
@@ -227,7 +247,8 @@ plot_food_direction = function(food_ranking, data, variable) {
   theme_classic() 
   
   print (plot)
-} 
+  } 
+  
 }
 ```
 

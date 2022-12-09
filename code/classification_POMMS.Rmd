@@ -12,8 +12,6 @@ library(phyloseq)
 library(caret)
 library(randomForest)
 library(MButils)
-library(MLeval)
-library(DMwR)
 ```
 
 # Load data
@@ -74,6 +72,7 @@ rm(otu_clr)
 ### Extract data
 
 Order of asv colnames in OTU table and tax table is the same.
+
 ```{r}
 features = p_ps@otu_table %>%
   as.data.frame() %>%
@@ -97,6 +96,7 @@ feature_labels = c("sample")
 features
 ```
 ### Attach data labels
+
 ```{r}
 sample_labels = p_ps@sam_data%>%
   as.data.frame() %>%
@@ -106,21 +106,6 @@ sample_labels = p_ps@sam_data%>%
 
 features = sample_labels %>%
   left_join(features)
-```
-
-#Subsampling: SMOTE
-
-```{r}
-# smote_input = features %>%
-#   select(-sample) %>%
-#   mutate(group = as.factor(group)) %>%
-#   as.data.frame()
-# 
-# subsampled = SMOTE(group ~ ., data  = smote_input)
-# 
-# subsampled%>%
-#   group_by(group) %>%
-#   summarise(count = n())
 ```
 
 ### Zero variance features
@@ -173,7 +158,9 @@ Preprocessing reduces column number to 131 from 235
 
 ```{r}
 input = filtered_features %>%
-  mutate(group_shuffle = sample(group))
+  mutate(group_shuffle = sample(group) %>%
+           as.factor(),
+         group = as.factor(group))
 ```
 
 # Modeling
@@ -182,7 +169,7 @@ Load functions from classification_function_AA file
 
 ```{r}
 label_list = c("group", "group_shuffle")
-results = loop_label(iterations =20, input, label_list, percent = 0.7, upsampling = TRUE)
+results = loop_label(iterations =20, input, label_list, percent = 0.7, downsampling = TRUE)
 
 auc_df = results[[2]]
 
@@ -218,15 +205,13 @@ lookup_asv = tax_table(p_ps) %>%
    rownames_to_column("asv") %>% 
    select(asv, name) %>%
    mutate(name = make.names(make.unique(name)))
-
-features
 ```
 
 ### summarize importances
 ```{r}
 # Making summary df of importances
 importance_summary = importance_df %>%
-  pivot_longer(cols = c("NA.3":"NA.2"), names_to = "food", values_to = "importance") %>%
+  pivot_longer(cols = c("NA.":"Apium.graveolens"), names_to = "food", values_to = "importance") %>%
   group_by(variable, food) %>%
   summarise(mean_importance = mean(importance)) %>%
   arrange(variable, desc(mean_importance))
@@ -244,7 +229,7 @@ top10 = ranking[1:10]
 ### Importance plot
 ```{r}
 importance_df %>%
-  pivot_longer(cols = c("NA.3":"NA.2"), names_to = "food", values_to = "importance")  %>%
+  pivot_longer(cols = c("NA.":"Apium.graveolens"), names_to = "food", values_to = "importance")  %>%
   filter(variable == "group" & food %in% top10) %>%
   ggplot()+
   geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
@@ -271,7 +256,7 @@ plot_food_direction(top10, input, variable = "group")
 
 ```{r}
 lookup_asv %>%
-  filter(name == "Theobroma.cacao") %>%
+  filter(name == "NA.") %>%
   pull(asv)
 ```
 
