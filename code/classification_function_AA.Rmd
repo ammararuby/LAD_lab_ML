@@ -102,7 +102,6 @@ label = name of your label column. specified as a string. Eg. "group"
 percent = percentage of train to test. specify as a double. Eg. 0.6.
 
 ```{r}
-
 loop_model = function(iterations, current_data, label, percent= 0.7, upsampling = FALSE, downsampling = FALSE){
   
   # Initialize results
@@ -160,6 +159,129 @@ loop_model = function(iterations, current_data, label, percent= 0.7, upsampling 
               data = train,
                   method = "rf",
                   trControl = fit_control,
+                  verbose = FALSE, 
+                  metric = "AUC")
+    
+    # Model predictions
+    
+    predictions = predict(model, newdata = test, type= "prob")
+    
+    pred_labels = predict(model, newdata = test)%>%
+      as.factor ()
+    
+    predictions$obs = test %>%
+      pull(label) %>%
+      as.factor() 
+    
+    # Confusion matrix
+    
+    cf = caret::confusionMatrix(data = pred_labels, reference =as.factor(predictions$obs), mode = "prec_recall")
+    
+    input_cf = input_cf + cf$table
+    
+    # Evaluate model
+    
+    eval = MLeval::evalm(predictions, showplots = FALSE, silent = TRUE)
+    
+    auc_list = append(auc_list, eval$stdres$`Group1`[13,1])
+    
+    #Extract feature importance
+    
+    feature_importance = caret::varImp(model$finalModel) %>% # Ben calls this importances instead of final model but the rankings are exactly the same, only number value scale is different.
+      arrange(desc(Overall)) %>%
+      as.matrix() %>%
+      t()
+    
+    importance_df = rbind(importance_df, feature_importance)
+    
+  }
+  
+  #Naming all results with appropriate label
+  
+  input_cf = list(label, input_cf)
+  
+  auc_list = auc_list %>% as.data.frame()
+  colnames(auc_list) = label
+  
+  importance_df = importance_df %>%
+    mutate(variable = label)
+  
+  #Join all the result elements together in a list: cf, auc vector, importance df
+  
+  results_list = list(input_cf, auc_list, importance_df)
+  
+  return(results_list) 
+}
+```
+
+```{r}
+loop_model_repeated_measures = function(iterations, current_data, label, percent= 0.7, upsampling = FALSE, downsampling = FALSE){
+  
+  # Initialize results
+    
+    input_cf = 0
+    auc_list = c()
+    importance_df = data.frame()
+
+  for (i in 1:iterations) {
+    
+    # Data splitting -- this section needs work. For now just copy-pasted
+     idlist = input %>%
+       select(id) %>%
+       distinct() %>%
+       pull()
+     
+     trainsize = as.integer(0.7 * length(idlist))
+     
+     trainid = sample((idlist))[1:trainsize]
+     
+     train = input %>%
+       filter(id %in% trainid)
+     
+     test = input %>%
+       filter(!(id %in% trainid))
+     
+     group_folds = groupKFold(train$id, k = 5)
+    
+    #Upsampling
+   
+    if(upsampling == TRUE){
+      train[[label]] = as.factor(train[[label]])
+      train = train %>%
+        as.data.frame()
+      
+      formula_smote = label %>%
+      paste0("~.") %>%
+      as.formula()
+      
+      train = DMwR::SMOTE(formula_smote, data  = train)
+    }
+    
+    # Downsampling
+    
+    if(downsampling == TRUE){
+      train = downSample(x = train,
+                         y = train[[label]])
+      train = train %>%
+        select(-Class)
+    }
+    
+    # Training model
+    
+    formula = label %>%
+      paste0("~.") %>%
+      as.formula()
+    
+    group_fit_control= trainControl(index = group_folds,
+                                  method = "cv",
+                                  summaryFunction = prSummary,
+                             classProbs = T,
+                             savePredictions = TRUE)
+    
+    model = caret::train(formula, #using formula specified 
+              data = train,
+                  method = "rf",
+                  trControl = group_fit_control,
                   verbose = FALSE, 
                   metric = "AUC")
     

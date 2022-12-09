@@ -1,0 +1,312 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Libraries
+
+```{r, include = FALSE}
+library(tidyverse)
+library(microbiome)
+library(phyloseq)
+library(caret)
+library(randomForest)
+library(MButils)
+```
+
+# Load data
+
+I am using the AHA dataset for writing my code because it is the simplest dataset I can work with.
+Simplest = significant number of baseline samples without issue of repeated measures, balanced distribution of classes, likely difference to be detected present.
+
+```{r}
+c_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/CHOICE_Trnl/CHOICE_20220912/ps_objects/choice_complete_2022122.rds")
+
+c_ps
+```
+
+```{r}
+DSQ = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/Others_analysis/Tracy_analysis/CHOICE_ana_20220810_AA.csv")
+
+dsq_filtered = DSQ %>%
+  select(id = subj, bmi = bmi_child, age= age_child, gender = gender_child_f, ethnicity = eth_child_f, race = race_child_f, weight_change = child_weight_change)
+```
+
+```{r}
+status = data.frame(true_week = c("EW1", "EW2", "W1", "W2", "W3", "W4", "W8"),
+                    timepoint = c("Pre", "Pre", "Treatment", "Treatment", "Treatment", "Treatment", "Followup"))
+
+dsq_id = dsq_filtered %>%
+  pull(id)
+
+sample_data(c_ps) =c_ps%>%
+  sample_data() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column(var = "sample") %>%
+  mutate(treatment = "Case") %>%
+  left_join(status) %>%
+  rename_all(tolower) %>%
+  filter(id %in% dsq_id) %>%
+  left_join(dsq_filtered) %>%
+  column_to_rownames("sample")
+
+proper_week = c("EW1", "EW2", "W1", "W2", "W3", "W4", "W8")
+
+c_ps = c_ps %>%
+  subset_samples(true_week %in% proper_week)
+  
+```
+
+```{r}
+rm(DSQ)
+rm(dsq_filtered)
+rm(dsq_id)
+rm(proper_week)
+rm(status)
+```
+
+
+# Preprocess
+
+## Remove problematic samples
+
+Taking out samples with less than or equal to 0 reads and keeping only treatment timepoint reduces samples from 259 down to 123.
+
+```{r}
+proper_week = c("W1", "W2", "W3", "W4", "W8")
+
+c_ps = c_ps %>%
+  subset_samples( reads > 0) %>%
+  subset_samples(true_week %in% proper_week)
+
+sample_data(c_ps)
+```
+
+Class distribution in this dataset:
+Control = 70
+Intervention = 53
+
+```{r}
+sample_data(c_ps) %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  treatment_by(treatment) %>%
+  summarise(count = n())
+```
+
+## Data transform
+
+```{r}
+otu_clr = abundances(c_ps, "clr") %>% # rclr transform could not be performed, get Nans
+  t()
+
+c_ps = phyloseq(otu_table(otu_clr, taxa_are_rows = FALSE),
+                   sample_data(sample_data(c_ps)),
+                   tax_table(tax_table(c_ps)))
+
+rm(otu_clr)
+```
+
+## Feature table
+
+### Extract data
+
+Order of asv colnames in OTU table and tax table is the same.
+
+```{r}
+features = c_ps@otu_table %>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample")
+
+feature_labels = c("sample")
+
+ names = tax_table(c_ps) %>%
+      data.frame() %>%
+      lowest_level() %>%
+   pull(name)
+
+ feature_labels = append(feature_labels, names)
+
+ feature_labels = make.unique(feature_labels) %>%
+   make.names()
+
+ colnames(features) = feature_labels
+
+features
+```
+
+### Attach data labels
+
+```{r}
+sample_labels = c_ps@sam_data%>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample") %>%
+  select(sample, treatment)
+
+features = sample_labels %>%
+  left_join(features)
+```
+
+### Zero variance features
+
+No features have zero variance
+```{r}
+nzv = features %>%
+  select(!c(sample,treatment)) %>%
+  nearZeroVar(saveMetrics = TRUE)
+```
+
+```{r}
+rm(nzv)
+```
+
+### Correlated predictors
+
+```{r}
+feature_cor = features %>%
+  select(!c(sample,treatment)) %>%
+ cor() 
+
+summary(feature_cor[upper.tri(feature_cor)])
+```
+
+```{r}
+high_cor = findCorrelation(feature_cor, cutoff = .75)
+
+filtered_features = features[,-high_cor]
+```
+
+```{r}
+rm(high_cor)
+rm(feature_cor)
+```
+
+### Linear dependencies
+
+```{r}
+feature_ld = filtered_features %>%
+  select(!c(sample,treatment)) %>%
+  findLinearCombos()
+
+filtered_features = filtered_features[, - feature_ld$remove]
+```
+
+## Input table
+
+Preprocessing reduces column number to 126 from 500
+
+```{r}
+input = filtered_features %>%
+  mutate(treatment_shuffle = sample(treatment) %>%
+           as.factor(),
+         treatment = as.factor(treatment))
+```
+
+# Modeling
+
+Load functions from classification_function_AA file
+
+```{r}
+label_list = c("treatment", "treatment_shuffle")
+results = loop_label(iterations =20, input, label_list, percent = 0.7)
+
+auc_df = results[[2]]
+
+importance_df = results[[1]]
+```
+
+```{r}
+rm(label_list)
+```
+
+# Plotting
+
+## AUC plot and t-test
+```{r}
+auc_df %>%
+  pivot_longer(cols = c("treatment", "treatment_shuffle"), names_to = "feature", values_to = "AUC") %>%
+  ggplot()+
+  geom_boxplot(aes(x=feature, y = AUC))+
+  theme_classic()
+
+t.test(auc_df$treatment, auc_df$treatment_shuffle)
+
+```
+
+## Importance plots
+
+### look-up table
+```{r}
+#Making asv reference for names in model
+lookup_asv = tax_table(c_ps) %>% 
+     data.frame() %>%
+      lowest_level() %>%
+   rownames_to_column("asv") %>% 
+   select(asv, name) %>%
+   mutate(name = make.names(make.unique(name)))
+```
+
+### summarize importances
+```{r}
+# Making summary df of importances
+importance_summary = importance_df %>%
+  pivot_longer(cols = c("NA.":"Apium.graveolens"), names_to = "food", values_to = "importance") %>%
+  treatment_by(variable, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(variable, desc(mean_importance))
+```
+### top 10 ranked list
+```{r}
+# Getting the ranked list
+ranking = importance_summary %>%
+  filter(variable == "treatment") %>%
+  pull(food)
+
+top10 = ranking[1:10]
+```
+
+### Importance plot
+```{r}
+importance_df %>%
+  pivot_longer(cols = c("NA.":"Apium.graveolens"), names_to = "food", values_to = "importance")  %>%
+  filter(variable == "treatment" & food %in% top10) %>%
+  ggplot()+
+  geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
+  labs(x= "Food", y ="Importance") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+Some of the important NAs for predictions only map to bacterial species in BLAST.
+
+# Important taxa directions
+
+```{r}
+sample_data(c_ps) %>%
+  data.frame() %>%
+  filter(timepoint == "Entry") %>%
+  ggplot() +
+  geom_boxplot(aes(x= treatment, y = bmi))+
+  theme_classic()
+
+plot_food_direction(top10, input, variable = "treatment")
+```
+
+
+```{r}
+lookup_asv %>%
+  filter(name == "NA.") %>%
+  pull(asv)
+```
+
+
+```{r}
+feature_cor %>%
+  as.data.frame() %>%
+  select(Helianthus.annuus) %>%
+  arrange(desc(Helianthus.annuus))
+```
+
+
