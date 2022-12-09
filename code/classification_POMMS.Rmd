@@ -265,7 +265,7 @@ sample_data(p_ps) %>%
   geom_boxplot(aes(x= group, y = bmi))+
   theme_classic()
 
-plot_food_direction(top10, features, variable = "group")
+plot_food_direction(top10, input, variable = "group")
 ```
 
 
@@ -277,13 +277,10 @@ lookup_asv %>%
 
 
 ```{r}
-cor_hel = feature_cor["Helianthus.annuus",] %>%
-  as.data.frame()
-
-colnames(cor_hel) = c("corr")
-
-cor_hel %>%
-  arrange(desc(corr))
+feature_cor %>%
+  as.data.frame() %>%
+  select(Helianthus.annuus) %>%
+  arrange(desc(Helianthus.annuus))
 ```
 
 

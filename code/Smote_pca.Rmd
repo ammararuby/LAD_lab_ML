@@ -1,0 +1,58 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+train_ind = caret::createDataPartition((input %>%
+                                          select(-sample) %>%
+                                              pull(group)), #split based on labe column
+                                     p = 0.7,
+                                     list = FALSE,
+                                     times = 1)
+train = input[train_ind,]
+
+
+
+pca_input = train %>%
+  select(-c(group, group_shuffle)) %>%
+  column_to_rownames("sample")
+
+pca = prcomp(pca_input, center = TRUE, scale = FALSE)
+
+pca$x %>%
+  as.data.frame() %>%
+  rownames_to_column("sample") %>%
+  left_join(select(train, sample, group)) %>%
+  ggplot()+
+  geom_point(aes(x= PC1, y = PC2, colour = group))+
+  theme_classic()
+
+```
+
+```{r}
+train_smote = train %>%
+  mutate(group = as.factor(group)) %>%
+  select(-c(sample, group_shuffle)) %>%
+  as.data.frame()
+
+train_smote = SMOTE(group ~ ., data  = train_smote)
+
+pca_smote = train_smote %>%
+  select(-group)
+
+pca_smote = prcomp(pca_smote, center = TRUE, scale = FALSE)
+
+train_smote = train_smote %>%
+  rownames_to_column("sample")
+
+pca_smote$x %>%
+  as.data.frame() %>%
+  rownames_to_column("sample") %>%
+  left_join(select(train_smote, sample, group)) %>%
+  ggplot()+
+  geom_point(aes(x= PC1, y = PC2, colour = group))+
+  theme_classic()
+```
+
+
