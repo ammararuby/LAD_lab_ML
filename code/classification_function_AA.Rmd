@@ -18,7 +18,7 @@ label_list = a vector of your label names as strings. Eg. c("group", "group_shuf
 percent = percentage of train to test. specify as a double. Eg. 0.6.
 ```{r}
 
-loop_label = function(iterations, input, label_list, percent= 0.7, upsampling = FALSE, downsampling = FALSE){
+loop_label = function(iterations, input, label_list, percent= 0.7, upsampling = FALSE, downsampling = FALSE, repeated_measures = FALSE){
   
   #Initialize results
   
@@ -32,9 +32,18 @@ loop_label = function(iterations, input, label_list, percent= 0.7, upsampling = 
     
     # Remove labels not being tested in this iteration
     
-    current_data = input %>%
+    if (repeated_measures == TRUE) {
+      print("initiating repeated measures protocol")
+      current_data = input %>%
+      select(-label_list[label_list != label])
+      
+      } else {
+      
+        current_data = input %>%
       select(-label_list[label_list != label]) %>%
       select(-sample)
+      
+      }
     
     # Upsampling
     
@@ -50,7 +59,16 @@ loop_label = function(iterations, input, label_list, percent= 0.7, upsampling = 
     
     #Model loop
     
-    results = loop_model(iterations, current_data, label, percent, upsampling, downsampling)
+    if (repeated_measures == TRUE) {
+     print("running repeated measures model loop")
+     results = loop_model_repeated_measures(iterations, current_data, label, percent, upsampling, downsampling)
+     
+    }else {
+    
+      results = loop_model(iterations, current_data, label, percent, upsampling, downsampling)  
+    
+      }
+    
     
     # Print cummulative confusion matrix
     
@@ -214,6 +232,7 @@ loop_model = function(iterations, current_data, label, percent= 0.7, upsampling 
 }
 ```
 
+## loop_model_repeated_measures
 ```{r}
 loop_model_repeated_measures = function(iterations, current_data, label, percent= 0.7, upsampling = FALSE, downsampling = FALSE){
   
@@ -225,23 +244,28 @@ loop_model_repeated_measures = function(iterations, current_data, label, percent
 
   for (i in 1:iterations) {
     
-    # Data splitting -- this section needs work. For now just copy-pasted
-     idlist = input %>%
-       select(id) %>%
+    # Data splitting
+     
+    idlist = current_data %>%
+       select(sample) %>%
        distinct() %>%
        pull()
      
-     trainsize = as.integer(0.7 * length(idlist))
+     trainsize = as.integer(percent * length(idlist))
      
      trainid = sample((idlist))[1:trainsize]
      
-     train = input %>%
-       filter(id %in% trainid)
+     train = current_data %>%
+       filter(sample %in% trainid)
      
-     test = input %>%
-       filter(!(id %in% trainid))
+     group_folds = groupKFold(train$sample, k = 5)
      
-     group_folds = groupKFold(train$id, k = 5)
+     train = train %>%
+       select(-sample)
+     
+     test = current_data %>%
+       filter(!(sample %in% trainid)) %>%
+       select(-sample)
     
     #Upsampling
    

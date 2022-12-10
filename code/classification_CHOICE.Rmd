@@ -20,7 +20,7 @@ I am using the AHA dataset for writing my code because it is the simplest datase
 Simplest = significant number of baseline samples without issue of repeated measures, balanced distribution of classes, likely difference to be detected present.
 
 ```{r}
-c_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/CHOICE_Trnl/CHOICE_20220912/ps_objects/choice_complete_2022122.rds")
+c_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/CHOICE_Trnl/CHOICE_20220912/ps_objects/choice_complete_20221205.rds")
 
 c_ps
 ```
@@ -43,7 +43,7 @@ sample_data(c_ps) =c_ps%>%
   sample_data() %>%
   as_tibble(rownames = NA) %>%
   rownames_to_column(var = "sample") %>%
-  mutate(treatment = "Case") %>%
+  mutate(group = "Case") %>%
   left_join(status) %>%
   rename_all(tolower) %>%
   filter(id %in% dsq_id) %>%
@@ -90,7 +90,7 @@ Intervention = 53
 sample_data(c_ps) %>%
   as.data.frame() %>%
   as_tibble() %>%
-  treatment_by(treatment) %>%
+  group_by(treatment) %>%
   summarise(count = n())
 ```
 
@@ -143,10 +143,13 @@ sample_labels = c_ps@sam_data%>%
   as.data.frame() %>%
   as_tibble(rownames = NA) %>%
   rownames_to_column("sample") %>%
-  select(sample, treatment)
+  select(sample, id, treatment)
 
 features = sample_labels %>%
-  left_join(features)
+  left_join(features) %>%
+  select(-sample) %>%
+  mutate(sample = id) %>%
+  select(-id)
 ```
 
 ### Zero variance features
@@ -195,7 +198,7 @@ filtered_features = filtered_features[, - feature_ld$remove]
 
 ## Input table
 
-Preprocessing reduces column number to 126 from 500
+Preprocessing reduces column number to 124 from 571
 
 ```{r}
 input = filtered_features %>%
@@ -215,11 +218,16 @@ results = loop_label(iterations =20, input, label_list, percent = 0.7)
 auc_df = results[[2]]
 
 importance_df = results[[1]]
+
 ```
 
 ```{r}
 rm(label_list)
 ```
+
+The version splitting such that there is no id overlap between test and train and using group_K_fold performs very weirdly. Sometimes no difference between treatment and shuffled but seems to be a trend for shuffled and shuffled definitely higher once. 
+
+The version with regular splitting performs like expected. Probably because of the information sharing between the samples but need to look into further to confirm what is happening.
 
 # Plotting
 
@@ -252,8 +260,8 @@ lookup_asv = tax_table(c_ps) %>%
 ```{r}
 # Making summary df of importances
 importance_summary = importance_df %>%
-  pivot_longer(cols = c("NA.":"Apium.graveolens"), names_to = "food", values_to = "importance") %>%
-  treatment_by(variable, food) %>%
+  pivot_longer(cols = c("NA.":"Carum.carvi"), names_to = "food", values_to = "importance") %>%
+  group_by(variable, food) %>%
   summarise(mean_importance = mean(importance)) %>%
   arrange(variable, desc(mean_importance))
 ```
@@ -270,7 +278,7 @@ top10 = ranking[1:10]
 ### Importance plot
 ```{r}
 importance_df %>%
-  pivot_longer(cols = c("NA.":"Apium.graveolens"), names_to = "food", values_to = "importance")  %>%
+  pivot_longer(cols = c("NA.":"Carum.carvi"), names_to = "food", values_to = "importance")  %>%
   filter(variable == "treatment" & food %in% top10) %>%
   ggplot()+
   geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
