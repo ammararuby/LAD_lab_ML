@@ -393,7 +393,8 @@ plot_food_direction = function(food_ranking, data, variable) {
   plot = data %>%
   select(variable, food) %>%
   ggplot()+
-  geom_boxplot(aes_string(x= variable, y= food))+
+  geom_boxplot(aes_string(x= variable, y= food, colour = variable))+
+    geom_jitter(aes_string(x= variable, y= food,  colour = variable), height=0)+
   theme_classic() 
   
   print (plot)
