@@ -213,7 +213,7 @@ Load functions from classification_function_AA file
 
 ```{r}
 label_list = c("treatment", "treatment_shuffle")
-results = loop_label(iterations =20, input, label_list, percent = 0.7)
+results = loop_label(iterations =20, input, label_list, percent = 0.7, repeated_measures = TRUE)
 
 auc_df = results[[2]]
 
@@ -260,7 +260,7 @@ lookup_asv = tax_table(c_ps) %>%
 ```{r}
 # Making summary df of importances
 importance_summary = importance_df %>%
-  pivot_longer(cols = c("NA.":"Carum.carvi"), names_to = "food", values_to = "importance") %>%
+  pivot_longer(cols = c("Sesamum.indicum":"NA.52"), names_to = "food", values_to = "importance") %>%
   group_by(variable, food) %>%
   summarise(mean_importance = mean(importance)) %>%
   arrange(variable, desc(mean_importance))
@@ -278,7 +278,7 @@ top10 = ranking[1:10]
 ### Importance plot
 ```{r}
 importance_df %>%
-  pivot_longer(cols = c("NA.":"Carum.carvi"), names_to = "food", values_to = "importance")  %>%
+  pivot_longer(cols = c("Sesamum.indicum":"NA.52"), names_to = "food", values_to = "importance")  %>%
   filter(variable == "treatment" & food %in% top10) %>%
   ggplot()+
   geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
@@ -292,13 +292,6 @@ Some of the important NAs for predictions only map to bacterial species in BLAST
 # Important taxa directions
 
 ```{r}
-sample_data(c_ps) %>%
-  data.frame() %>%
-  filter(timepoint == "Entry") %>%
-  ggplot() +
-  geom_boxplot(aes(x= treatment, y = bmi))+
-  theme_classic()
-
 plot_food_direction(top10, input, variable = "treatment")
 ```
 

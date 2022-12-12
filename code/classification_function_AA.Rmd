@@ -250,10 +250,14 @@ loop_model_repeated_measures = function(iterations, current_data, label, percent
        select(sample) %>%
        distinct() %>%
        pull()
+    
+    #print(idlist) # remove before running multiple iterations
      
      trainsize = as.integer(percent * length(idlist))
      
      trainid = sample((idlist))[1:trainsize]
+     
+     #print(trainid) # remove before running multiple iterations
      
      train = current_data %>%
        filter(sample %in% trainid)
