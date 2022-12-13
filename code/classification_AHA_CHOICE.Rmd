@@ -26,6 +26,12 @@ a_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_L
 a_ps
 ```
 
+```{r}
+c_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/CHOICE_Trnl/CHOICE_20220912/ps_objects/choice_complete_20221205_clean.rds")
+
+c_ps
+```
+
 # Preprocess
 
 ## Remove problematic samples
@@ -34,12 +40,15 @@ Taking out samples that are not listed to have completed the study and samples w
 
 Taking only the baseline timepoint brings further down to 44 samples
 
+Keeping non-completed samples reduced the AUC of modelling substantially, remove these samples as before.
+
 ```{r}
 a_ps = a_ps %>%
   subset_samples(completion == "Completed" & reads >0) %>%
   subset_samples(timepoint == "Baseline")
 
 a_ps
+
 ```
 
 Class distribution in this dataset:
@@ -70,15 +79,39 @@ Removing completely unassigned taxa reduces taxa from 235 to 82.
 # a_ps
 ```
 
+## Merge phyloseq
+
+```{r}
+combined = merge_phyloseq(c_ps, a_ps)
+
+combined
+```
+
+### Aligning seq table
+
+```{r}
+seqtab = combined@otu_table
+
+seqtab_merged = dada2::collapseNoMismatch(seqtab)
+
+combined = phyloseq(otu_table(seqtab_merged, taxa_are_rows=FALSE),
+               sample_data(combined@sam_data), 
+               tax_table(combined@tax_table))
+
+combined
+
+#sample_data(combined)
+```
+
 ## Data transform
 
 ```{r}
-otu_clr = abundances(a_ps, "clr") %>% # rclr transform could not be performed, get Nans
+otu_clr = abundances(combined, "clr") %>% 
   t()
 
-a_ps = phyloseq(otu_table(otu_clr, taxa_are_rows = FALSE),
-                   sample_data(sample_data(a_ps)),
-                   tax_table(tax_table(a_ps)))
+combined = phyloseq(otu_table(otu_clr, taxa_are_rows = FALSE),
+                   sample_data(combined@sam_data),
+                   tax_table(combined@tax_table))
 
 rm(otu_clr)
 ```
@@ -89,24 +122,12 @@ rm(otu_clr)
 
 Order of asv colnames in OTU table and tax table is the same.
 ```{r}
-features = a_ps@otu_table %>%
+features = combined@otu_table %>%
   as.data.frame() %>%
   as_tibble(rownames = NA) %>%
   rownames_to_column("sample")
 
 feature_labels = c("sample")
-
- names = tax_table(a_ps) %>%
-      data.frame() %>%
-      lowest_level() %>%
-   pull(name)
-
- feature_labels = append(feature_labels, names)
-
- feature_labels = make.unique(feature_labels) %>%
-   make.names()
-
- colnames(features) = feature_labels
 
 features
 ```
@@ -118,6 +139,12 @@ nzv = features %>%
   select(!sample) %>%
   nearZeroVar(saveMetrics = TRUE)
 ```
+
+```{r}
+nzv %>%
+  filter(nzv == TRUE)
+```
+
 
 ```{r}
 rm(nzv)
@@ -134,7 +161,7 @@ summary(feature_cor[upper.tri(feature_cor)])
 ```
 
 ```{r}
-high_cor = findCorrelation(feature_cor, cutoff = .75)
+high_cor = findCorrelation(feature_cor, cutoff = .50) #using a more permissive cutoff because a lot of columns still left in the input table
 
 filtered_features = features[,-high_cor]
 ```
@@ -156,111 +183,176 @@ filtered_features = filtered_features[, - feature_ld$remove]
 
 ## Input table
 ```{r}
-sample_labels = a_ps@sam_data%>%
+sample_labels = combined@sam_data%>%
   as.data.frame() %>%
   as_tibble(rownames = NA) %>%
   rownames_to_column("sample") %>%
   select(sample, group) %>%
-  mutate(group_shuffle = sample(group))
+  left_join(filtered_features)
 
 input = sample_labels %>%
-  left_join(filtered_features)
+  filter(str_detect(sample, "AHA")) %>%
+  mutate(group_shuffle = sample(group))
+
+external_test = sample_labels %>%
+  filter(!str_detect(sample, "AHA")) %>%
+  select(-c(group))
 ```
 
 # Modeling
 
-Load functions from classification_function_AA file
+## Baseline performance
 
 ```{r}
 label_list = c("group", "group_shuffle")
-results = loop_label(iterations = 20, input, label_list, percent = 0.7)
+results = loop_label(iterations = 20, input, label_list, percent = 0.8)
 
 auc_df = results[[2]]
 
 importance_df = results[[1]]
 ```
 
+## Loop
+
 ```{r}
-rm(label_list)
+label = "group"
+
+importance_df = data.frame()
+
+cummulative_external = data.frame()
+
+auc_list = c()
+
+current_data = input %>%
+      select(-label_list[label_list != label]) %>%
+      select(-sample)
+
+for(i in 1:20) {
+  # Data splitting
+    train_ind = caret::createDataPartition((current_data %>%
+                                              pull(label)), #split based on label column
+                                     p = 0.8,
+                                     list = FALSE,
+                                     times = 1)
+    train = current_data[train_ind,]
+    test = current_data[-train_ind,]
+    
+    # Training model
+    
+    formula = label %>%
+      paste0("~.") %>%
+      as.formula()
+    
+    fit_control = caret::trainControl(method = "CV", # 5-fold cross validation
+                                 number = 5,
+                                 summaryFunction = prSummary,
+                                 classProbs = T)
+    
+    model = caret::train(formula, #using formula specified 
+              data = train,
+                  method = "rf",
+                  trControl = fit_control,
+                  verbose = FALSE, 
+                  metric = "AUC")
+    
+    # Model predictions
+    
+    predictions = predict(model, newdata = test, type= "prob")
+    
+    predictions$obs = test %>%
+      pull(label) %>%
+      as.factor() 
+    
+    # Evaluate model
+    
+    eval = MLeval::evalm(predictions, showplots = FALSE, silent = TRUE)
+    
+    auc = eval$stdres$`Group1`[13,1]
+    
+    auc_list = append(auc_list, auc)
+    
+    #Extract feature importance
+
+    feature_importance = caret::varImp(model$finalModel) %>% # Ben calls this importances instead of final model but the rankings are exactly the same, only number value scale is different.
+      arrange(desc(Overall)) %>%
+      as.matrix() %>%
+      t() %>%
+      as.data.frame()
+    
+    feature_importance$auc = auc
+    
+    feature_importance$iteration = i
+    
+    feature_importance$label = label
+    
+    importance_df = rbind(importance_df, feature_importance)
+    
+    #Predicting on external dataset
+    
+    external_predictions =  predict(model, newdata = external_test, type= "prob")
+    
+    external_predictions$sample = external_test$sample
+    
+    external_predictions$auc = auc
+    
+    external_predictions$pred = predict(model, newdata = external_test)%>%
+      as.factor ()
+    
+    external_predictions$iteration = i
+    
+    cummulative_external = rbind(cummulative_external, external_predictions)
+    
+}
+
+auc_list
+
+importance_df
+
+cummulative_external  
+  
 ```
 
 # Plotting
 
 ## AUC plot and t-test
 ```{r}
-auc_df %>%
-  pivot_longer(cols = c("group", "group_shuffle"), names_to = "feature", values_to = "AUC") %>%
+data.frame(auc = auc_list)%>%
   ggplot()+
-  geom_boxplot(aes(x=feature, y = AUC))+
+  geom_boxplot(aes(y = auc))+
   theme_classic()
-
-t.test(auc_df$group, auc_df$group_shuffle)
-
 ```
 
-## Importance plots
+## Save external predictions
 
-### look-up table
+### predictions
 ```{r}
-#Making asv reference for names in model
-lookup_asv = tax_table(a_ps) %>% 
-     data.frame() %>%
-      lowest_level() %>%
-   rownames_to_column("asv") %>% 
-   select(asv, name) %>%
-   mutate(name = make.names(make.unique(name)))
+max = max(auc_list)
+
+samdf = c_ps@sam_data%>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample") %>%
+  select(sample, id, treatment, true_week, timepoint) 
+
+save = cummulative_external %>%
+  #filter(auc == max) %>%
+  left_join(samdf) %>%
+  arrange(iteration, treatment, id, true_week)
 ```
-
-### summarize importances
-```{r}
-# Making summary df of importances
-importance_summary = importance_df %>%
-  pivot_longer(cols = c("NA.1":"Solanum.lycopersicum"), names_to = "food", values_to = "importance") %>%
-  group_by(variable, food) %>%
-  summarise(mean_importance = mean(importance)) %>%
-  arrange(variable, desc(mean_importance))
-```
-### top 10 ranked list
-```{r}
-# Getting the ranked list
-ranking = importance_summary %>%
-  filter(variable == "group_shuffle") %>%
-  pull(food)
-
-top10 = ranking[1:10]
-```
-
-### Importance plot
-```{r}
-importance_df %>%
-  pivot_longer(cols = c("NA.1":"Solanum.lycopersicum"), names_to = "food", values_to = "importance")  %>%
-  filter(variable == "group_shuffle" & food %in% top10) %>%
-  ggplot()+
-  geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
-  labs(x= "Food", y ="Importance") +
-  theme_classic() +
-  theme(axis.text.x = element_text(angle = 45, hjust=1))
-```
-
-Some of the important NAs for predictions only map to bacterial species in BLAST.
-
-# Important taxa directions
 
 ```{r}
-sample_data(a_ps) %>%
-  data.frame() %>%
-  ggplot() +
-  geom_boxplot(aes(x= group, y = baseline_bmi))+
-  theme_classic()
-
-plot_food_direction(top10, input)
+write_csv(save, "/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/Machine_learning/LAD_lab_ML/code/aha_to_choice_predictions.csv")
 ```
 
+
+### variable importances
 
 ```{r}
-lookup_asv %>%
-  filter(name == "Carya") %>%
-  pull(asv)
+write_csv(importance_df, "/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/Machine_learning/LAD_lab_ML/code/aha_to_choice_feature_importance.csv")
 ```
+
+
+
+
 
 
