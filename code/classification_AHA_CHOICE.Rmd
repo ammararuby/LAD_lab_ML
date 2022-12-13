@@ -1,0 +1,266 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Libraries
+
+```{r, include = FALSE}
+library(tidyverse)
+library(microbiome)
+library(phyloseq)
+library(caret)
+library(randomForest)
+library(MButils)
+```
+
+# Load data
+
+I am using the AHA dataset for writing my code because it is the simplest dataset I can work with.
+Simplest = significant number of baseline samples without issue of repeated measures, balanced distribution of classes, likely difference to be detected present.
+
+
+```{r}
+a_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/AHA/220714_MN00462_0226_A000H3WKM5/20221110_results/ps_objects/AHA_trnl_with_metadata_20221205.rds")
+
+a_ps
+```
+
+# Preprocess
+
+## Remove problematic samples
+
+Taking out samples that are not listed to have completed the study and samples with more than 0 reads reduces samples from 95 down to 77.
+
+Taking only the baseline timepoint brings further down to 44 samples
+
+```{r}
+a_ps = a_ps %>%
+  subset_samples(completion == "Completed" & reads >0) %>%
+  subset_samples(timepoint == "Baseline")
+
+a_ps
+```
+
+Class distribution in this dataset:
+Case = 20
+Control = 24
+
+```{r}
+sample_data(a_ps) %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  group_by(group) %>%
+  summarise(count = n())
+```
+## Remove unassigned taxa
+
+Debating whether this should be done for machine learning. Because we are simply throwing out because we don't know what there are and even if they account for a small percentage of reads, they might still have important information.
+
+I think I will refrain from removing unless I have a good reason to.
+
+Don't do this because some very important taxa for ML model turned out to be unassigned. - 12/8/22
+
+Removing completely unassigned taxa reduces taxa from 235 to 82.
+
+```{r}
+# a_ps = a_ps %>%
+#   subset_taxa(is.na(superkingdom) == FALSE)
+# 
+# a_ps
+```
+
+## Data transform
+
+```{r}
+otu_clr = abundances(a_ps, "clr") %>% # rclr transform could not be performed, get Nans
+  t()
+
+a_ps = phyloseq(otu_table(otu_clr, taxa_are_rows = FALSE),
+                   sample_data(sample_data(a_ps)),
+                   tax_table(tax_table(a_ps)))
+
+rm(otu_clr)
+```
+
+## Feature table
+
+### Extract data
+
+Order of asv colnames in OTU table and tax table is the same.
+```{r}
+features = a_ps@otu_table %>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample")
+
+feature_labels = c("sample")
+
+ names = tax_table(a_ps) %>%
+      data.frame() %>%
+      lowest_level() %>%
+   pull(name)
+
+ feature_labels = append(feature_labels, names)
+
+ feature_labels = make.unique(feature_labels) %>%
+   make.names()
+
+ colnames(features) = feature_labels
+
+features
+```
+### Zero variance features
+
+No features have zero variance
+```{r}
+nzv = features %>%
+  select(!sample) %>%
+  nearZeroVar(saveMetrics = TRUE)
+```
+
+```{r}
+rm(nzv)
+```
+
+### Correlated predictors
+
+```{r}
+feature_cor = features %>%
+ select(!sample) %>%
+ cor() 
+
+summary(feature_cor[upper.tri(feature_cor)])
+```
+
+```{r}
+high_cor = findCorrelation(feature_cor, cutoff = .75)
+
+filtered_features = features[,-high_cor]
+```
+
+```{r}
+rm(high_cor)
+rm(feature_cor)
+```
+
+### Linear dependencies
+
+```{r}
+feature_ld = filtered_features %>%
+  select(!sample) %>%
+  findLinearCombos()
+
+filtered_features = filtered_features[, - feature_ld$remove]
+```
+
+## Input table
+```{r}
+sample_labels = a_ps@sam_data%>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample") %>%
+  select(sample, group) %>%
+  mutate(group_shuffle = sample(group))
+
+input = sample_labels %>%
+  left_join(filtered_features)
+```
+
+# Modeling
+
+Load functions from classification_function_AA file
+
+```{r}
+label_list = c("group", "group_shuffle")
+results = loop_label(iterations = 20, input, label_list, percent = 0.7)
+
+auc_df = results[[2]]
+
+importance_df = results[[1]]
+```
+
+```{r}
+rm(label_list)
+```
+
+# Plotting
+
+## AUC plot and t-test
+```{r}
+auc_df %>%
+  pivot_longer(cols = c("group", "group_shuffle"), names_to = "feature", values_to = "AUC") %>%
+  ggplot()+
+  geom_boxplot(aes(x=feature, y = AUC))+
+  theme_classic()
+
+t.test(auc_df$group, auc_df$group_shuffle)
+
+```
+
+## Importance plots
+
+### look-up table
+```{r}
+#Making asv reference for names in model
+lookup_asv = tax_table(a_ps) %>% 
+     data.frame() %>%
+      lowest_level() %>%
+   rownames_to_column("asv") %>% 
+   select(asv, name) %>%
+   mutate(name = make.names(make.unique(name)))
+```
+
+### summarize importances
+```{r}
+# Making summary df of importances
+importance_summary = importance_df %>%
+  pivot_longer(cols = c("NA.1":"Solanum.lycopersicum"), names_to = "food", values_to = "importance") %>%
+  group_by(variable, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(variable, desc(mean_importance))
+```
+### top 10 ranked list
+```{r}
+# Getting the ranked list
+ranking = importance_summary %>%
+  filter(variable == "group_shuffle") %>%
+  pull(food)
+
+top10 = ranking[1:10]
+```
+
+### Importance plot
+```{r}
+importance_df %>%
+  pivot_longer(cols = c("NA.1":"Solanum.lycopersicum"), names_to = "food", values_to = "importance")  %>%
+  filter(variable == "group_shuffle" & food %in% top10) %>%
+  ggplot()+
+  geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
+  labs(x= "Food", y ="Importance") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+Some of the important NAs for predictions only map to bacterial species in BLAST.
+
+# Important taxa directions
+
+```{r}
+sample_data(a_ps) %>%
+  data.frame() %>%
+  ggplot() +
+  geom_boxplot(aes(x= group, y = baseline_bmi))+
+  theme_classic()
+
+plot_food_direction(top10, input)
+```
+
+
+```{r}
+lookup_asv %>%
+  filter(name == "Carya") %>%
+  pull(asv)
+```
+
+

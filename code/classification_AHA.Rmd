@@ -12,8 +12,6 @@ library(phyloseq)
 library(caret)
 library(randomForest)
 library(MButils)
-library(MLeval)
-library(pROC)
 ```
 
 # Load data
