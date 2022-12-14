@@ -256,7 +256,7 @@ plot_food_direction(top10, input, variable = "group")
 
 ```{r}
 lookup_asv %>%
-  filter(name == "NA.") %>%
+  filter(name == "Lactuca.sativa") %>%
   pull(asv)
 ```
 

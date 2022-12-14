@@ -761,23 +761,28 @@ t.test(x, y, paired = TRUE)
 wilcox.test(x, y, paired = TRUE)
 ```
 
-# ASV lookup table
+# Food importances 
+Need to figure this section out.
+
+## ASV lookup table
 
 ```{r}
-# combined = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/All_cohorts/data_objects/CHOICE_POMMS_AHA_combined_20221213.rds")
-# 
-# lookup = combined %>%
-#   tax_table() %>%
-#   as.data.frame() %>%
-#   as_tibble(rownames = NA) %>%
-#   rownames_to_column("asv")
+combined = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/All_cohorts/data_objects/CHOICE_POMMS_AHA_combined_20221213.rds")
+
+lookup = combined %>%
+  tax_table() %>% 
+     data.frame() %>%
+      lowest_level() %>%
+   rownames_to_column("asv") %>% 
+   select(asv, name) %>%
+   mutate(name = make.names(make.unique(name)))
 ```
 
 ```{r}
 common_names = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Brianna P/diet/food-dbs/data/outputs/dada2-compatible/trnL/trnLGH ASV common names.csv")
 ```
 
-# CHOICE
+## CHOICE
 
 ```{r}
 c_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/CHOICE_Trnl/CHOICE_20220912/ps_objects/choice_complete_20221205_clean.rds")
@@ -805,7 +810,7 @@ input = samdf %>%
   left_join(otudf)
 ```
 
-# Best AUC importances
+## Best AUC importances
 ```{r}
 max = aha_pred$auc %>%
   max()
@@ -823,6 +828,10 @@ ranking = importance_summary %>%
   pull(food)
 
 top10 = ranking[1:10]
+
+names = lookup %>%
+  filter(asv %in% top10) %>%
+  pull(name)
 
 plot_food_direction(top10, input, "treatment")
 
@@ -866,7 +875,7 @@ for(item in top10){
 name_list
 ```
 
-# AUC above 0.7 importances
+## AUC above 0.7 importances
 ```{r}
 #colnames(aha_importance)
 
