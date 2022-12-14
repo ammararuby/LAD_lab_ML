@@ -1,0 +1,314 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Setup notebook
+
+```{r}
+library(tidyverse)
+library(phyloseq)
+library(microbiome)
+```
+
+# Functions
+
+```{r}
+#input = dataframe of features x labels (including sample names)
+# List of foods in order of model importance
+
+plot_food_direction = function(food_ranking, data, variable) {
+ 
+  for(food in food_ranking) {
+  
+    cols = colnames(data)
+  
+    if(food %in% cols){
+     plot = data %>%
+    select(variable, food) %>%
+    ggplot()+
+    geom_boxplot(aes_string(x= variable, y= food, colour = variable))+
+      geom_jitter(aes_string(x= variable, y= food,  colour = variable), height=0)+
+    theme_classic() 
+  
+    print (plot) 
+   }
+  } 
+}
+```
+
+# Load data
+
+```{r}
+aha_pred = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/Machine_learning/LAD_lab_ML/code/aha_to_choice_predictions.csv")
+
+aha_importance = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/Machine_learning/LAD_lab_ML/code/aha_to_choice_feature_importance.csv")
+
+pomms_pred = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/Machine_learning/LAD_lab_ML/code/pomms_to_choice_predictions.csv")
+
+pomms_importance = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/Machine_learning/LAD_lab_ML/code/pomms_to_choice_feature_importance.csv")
+```
+# AUC range
+
+```{r}
+aha_pred %>%
+  select(auc) %>%
+  distinct() %>%
+  ggplot()+
+  geom_boxplot(aes(y= auc, x= "AHA"))+
+  geom_point(aes(y= auc, x= "AHA"), alpha = 0.5)+
+  labs(title = "AHA AUC range")+
+  theme_classic()
+
+pomms_pred %>%
+  select(auc) %>%
+  distinct() %>%
+  ggplot()+
+  geom_boxplot(aes(y= auc, x= "POMMS"))+
+  geom_point(aes(y= auc, x= "POMMS"), alpha = 0.5)+
+  labs(title = "POMMS AUC range")+
+  theme_classic()
+```
+
+# Best AUC
+```{r}
+max = aha_pred$auc %>%
+  max()
+
+aha_pred %>%
+  filter(auc == max) %>%
+  ggplot()+
+  geom_boxplot(aes(x= treatment, y= Case, colour = timepoint))+
+  geom_point(aes(x= treatment, y= Case, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
+  labs(title ="AHA to CHOICE")+
+  theme_classic()
+
+aha_pred %>%
+  filter(auc == 0.94) %>%
+  ggplot()+
+  geom_boxplot(aes(x= treatment, y= Control, colour = timepoint))+
+  geom_point(aes(x= treatment, y= Control, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
+  labs(title ="AHA to CHOICE")+
+  theme_classic()
+```
+
+```{r}
+max = pomms_pred$auc %>%
+  max()
+
+pomms_pred %>%
+  filter(auc == max) %>%
+  ggplot()+
+  geom_boxplot(aes(x= treatment, y= Case, colour = timepoint))+
+  geom_point(aes(x= treatment, y= Case, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
+  labs(title ="POMMS to CHOICE")+
+  theme_classic()
+
+pomms_pred %>%
+  filter(auc == 0.82) %>%
+  ggplot()+
+  geom_boxplot(aes(x= treatment, y= Control, colour = timepoint))+
+  geom_point(aes(x= treatment, y= Control, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
+  labs(title ="POMMS to CHOICE")+
+  theme_classic()
+```
+#AUCs above 0.7
+
+```{r}
+aha_pred %>%
+  filter(auc > 0.7) %>%
+  ggplot()+
+  geom_boxplot(aes(x= treatment, y= Case, colour = timepoint))+
+  geom_point(aes(x= treatment, y= Case, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
+  labs(title ="AHA to CHOICE")+
+  theme_classic()
+
+aha_pred %>%
+  filter(auc > 0.7) %>%
+  ggplot()+
+  geom_boxplot(aes(x= treatment, y= Control, colour = timepoint))+
+  geom_point(aes(x= treatment, y= Control, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
+  labs(title ="AHA to CHOICE")+
+  theme_classic()
+```
+
+
+```{r}
+pomms_pred %>%
+  filter(auc > 0.7) %>%
+  ggplot()+
+  geom_boxplot(aes(x= treatment, y= Case, colour = timepoint))+
+  geom_point(aes(x= treatment, y= Case, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
+  labs(title ="POMMS to CHOICE")+
+  theme_classic()
+
+pomms_pred %>%
+  filter(auc > 0.7) %>%
+  ggplot()+
+  geom_boxplot(aes(x= treatment, y= Control, colour = timepoint))+
+  geom_point(aes(x= treatment, y= Control, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
+  labs(title ="POMMS to CHOICE")+
+  theme_classic()
+```
+
+# ASV lookup table
+
+```{r}
+# combined = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/All_cohorts/data_objects/CHOICE_POMMS_AHA_combined_20221213.rds")
+# 
+# lookup = combined %>%
+#   tax_table() %>%
+#   as.data.frame() %>%
+#   as_tibble(rownames = NA) %>%
+#   rownames_to_column("asv")
+```
+
+```{r}
+common_names = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Brianna P/diet/food-dbs/data/outputs/dada2-compatible/trnL/trnLGH ASV common names.csv")
+```
+
+
+# CHOICE
+
+```{r}
+c_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/CHOICE/CHOICE_Trnl/CHOICE_20220912/ps_objects/choice_complete_20221205_clean.rds")
+
+otu_clr = abundances(c_ps, "clr") %>% # clr transform
+  t()
+
+c_ps = phyloseq(otu_table(otu_clr, taxa_are_rows = FALSE),
+                   sample_data(sample_data(c_ps)),
+                   tax_table(tax_table(c_ps)))
+samdf = c_ps %>%
+  sample_data() %>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample") %>%
+  select(sample, id, treatment, true_week, timepoint)
+
+otudf = c_ps %>%
+  otu_table() %>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample")
+
+input = samdf %>%
+  left_join(otudf)
+```
+# Best AUC importances
+```{r}
+max = aha_pred$auc %>%
+  max()
+
+#colnames(aha_importance)
+
+importance_summary = aha_importance %>%
+  filter(auc == max) %>%
+  pivot_longer(cols = c("ATCCTATTATTTTATTATTTTACGAAACTAAACAAAGGTTCAGCAAGCGAGAATAATAAAAAAAG":"CATAAACTGGTAGCGACCGGCACCACCGGTAAACTGATCGCAGAAGCTACCGGCT"), names_to = "food", values_to = "importance") %>%
+  group_by(label, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(label, desc(mean_importance))
+
+ranking = importance_summary %>%
+  pull(food)
+
+top10 = ranking[1:10]
+
+plot_food_direction(top10, input, "treatment")
+
+name_list = c()
+for(item in top10){
+ name = common_names %>%
+    filter(str_detect(asv, item)) %>%
+    pull(common_name)
+ name_list = append(name_list, name)
+}
+name_list
+```
+
+```{r}
+max = pomms_pred$auc %>%
+  max()
+
+#colnames(pomms_importance)
+
+importance_summary = pomms_importance %>%
+  filter(auc == max) %>%
+  pivot_longer(cols = c("ATCACGTTTTCCGAAAACAAACAAAGGTTCAGAAAGCGAAAATAAAAAAG":"ATCCTGTTTTCTCAAAACAAACAAAGGTTCAGAAAAAAAG"), names_to = "food", values_to = "importance") %>%
+  group_by(label, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(label, desc(mean_importance))
+
+ranking = importance_summary %>%
+  pull(food)
+
+top10 = ranking[1:10]
+
+plot_food_direction(top10, input, "treatment")
+
+name_list = c()
+for(item in top10){
+ name = common_names %>%
+    filter(str_detect(asv, item)) %>%
+    pull(common_name)
+ name_list = append(name_list, name)
+}
+name_list
+```
+
+# AUC above 0.7 importances
+```{r}
+#colnames(aha_importance)
+
+importance_summary = aha_importance %>%
+  filter(auc >0.7) %>%
+  pivot_longer(cols = c("ATCCTATTATTTTATTATTTTACGAAACTAAACAAAGGTTCAGCAAGCGAGAATAATAAAAAAAG":"CATAAACTGGTAGCGACCGGCACCACCGGTAAACTGATCGCAGAAGCTACCGGCT"), names_to = "food", values_to = "importance") %>%
+  group_by(label, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(label, desc(mean_importance))
+
+ranking = importance_summary %>%
+  pull(food)
+
+top10 = ranking[1:10]
+
+plot_food_direction(top10, input, "treatment")
+
+name_list = c()
+for(item in top10){
+ name = common_names %>%
+    filter(str_detect(asv, item)) %>%
+    pull(common_name)
+ name_list = append(name_list, name)
+}
+name_list
+```
+
+```{r}
+importance_summary = pomms_importance %>%
+  filter(auc >0.7) %>%
+  pivot_longer(cols = c("ATCACGTTTTCCGAAAACAAACAAAGGTTCAGAAAGCGAAAATAAAAAAG":"ATCCTGTTTTCTCAAAACAAACAAAGGTTCAGAAAAAAAG"), names_to = "food", values_to = "importance") %>%
+  group_by(label, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(label, desc(mean_importance))
+
+ranking = importance_summary %>%
+  pull(food)
+
+top10 = ranking[1:10]
+
+plot_food_direction(top10, input, "treatment")
+
+name_list = c()
+for(item in top10){
+ name = common_names %>%
+    filter(str_detect(asv, item)) %>%
+    pull(common_name)
+ name_list = append(name_list, name)
+}
+name_list
+```
+
+

@@ -390,16 +390,20 @@ loop_model_repeated_measures = function(iterations, current_data, label, percent
 plot_food_direction = function(food_ranking, data, variable) {
  
   for(food in food_ranking) {
-  plot = data %>%
-  select(variable, food) %>%
-  ggplot()+
-  geom_boxplot(aes_string(x= variable, y= food, colour = variable))+
-    geom_jitter(aes_string(x= variable, y= food,  colour = variable), height=0)+
-  theme_classic() 
   
-  print (plot)
+    cols = colnames(data)
+  
+    if(food %in% cols){
+     plot = data %>%
+    select(variable, food) %>%
+    ggplot()+
+    geom_boxplot(aes_string(x= variable, y= food, colour = variable))+
+      geom_jitter(aes_string(x= variable, y= food,  colour = variable), height=0)+
+    theme_classic() 
+  
+    print (plot) 
+   }
   } 
-  
 }
 ```
 
