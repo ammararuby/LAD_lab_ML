@@ -77,7 +77,8 @@ proper_week = c("W1", "W2", "W3", "W4", "W8")
 
 c_ps = c_ps %>%
   subset_samples( reads > 0) %>%
-  subset_samples(true_week %in% proper_week)
+  subset_samples(true_week %in% proper_week) %>%
+  subset_samples(timepoint != "Pre")
 
 sample_data(c_ps)
 ```
@@ -198,7 +199,7 @@ filtered_features = filtered_features[, - feature_ld$remove]
 
 ## Input table
 
-Preprocessing reduces column number to 124 from 571
+Preprocessing reduces column number to 125 from 571
 
 ```{r}
 input = filtered_features %>%
@@ -213,7 +214,7 @@ Load functions from classification_function_AA file
 
 ```{r}
 label_list = c("treatment", "treatment_shuffle")
-results = loop_label(iterations =20, input, label_list, percent = 0.7, repeated_measures = TRUE)
+results = loop_label(iterations =20, input, label_list, percent = 0.8, repeated_measures = TRUE)
 
 auc_df = results[[2]]
 

@@ -50,6 +50,7 @@ pomms_pred = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidla
 
 pomms_importance = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/Machine_learning/LAD_lab_ML/code/pomms_to_choice_feature_importance.csv")
 ```
+
 # AUC range
 
 ```{r}
@@ -73,6 +74,8 @@ pomms_pred %>%
 ```
 
 # Best AUC
+
+## AHA
 ```{r}
 max = aha_pred$auc %>%
   max()
@@ -86,13 +89,163 @@ aha_pred %>%
   theme_classic()
 
 aha_pred %>%
-  filter(auc == 0.94) %>%
+  filter(auc == max) %>%
   ggplot()+
   geom_boxplot(aes(x= treatment, y= Control, colour = timepoint))+
   geom_point(aes(x= treatment, y= Control, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
   labs(title ="AHA to CHOICE")+
   theme_classic()
 ```
+
+### Distribution
+
+```{r}
+aha_pred %>%
+  filter(auc == max) %>%
+  ggplot()+
+  geom_density(aes(x= Control, color= treatment))+
+  facet_wrap(~timepoint)+
+  theme_classic()
+```
+
+### Pre
+```{r}
+x= aha_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Pre" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= aha_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Pre" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Treatment
+```{r}
+x= aha_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Treatment" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= aha_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Treatment" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Followup
+```{r}
+x= aha_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Followup" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= aha_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Followup" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Intervention
+
+#### Pre vs Treatment
+```{r}
+aha_summary = aha_pred %>%
+  filter(auc == max) %>%
+  filter(treatment == "Intervention") %>%
+  group_by(id, timepoint) %>%
+  summarise(mean_control = mean(Control),
+            mean_case = mean(Case)) %>%
+  pivot_wider(names_from = "timepoint", values_from = c("mean_control", "mean_case"))
+
+x= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Treatment)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+#### Pre vs Followup
+```{r}
+x= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Followup)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+### Control
+
+#### Pre vs Treatment
+```{r}
+aha_summary = aha_pred %>%
+  filter(auc == max) %>%
+  filter(treatment == "Control") %>%
+  group_by(id, timepoint) %>%
+  summarise(mean_control = mean(Control),
+            mean_case = mean(Case)) %>%
+  pivot_wider(names_from = "timepoint", values_from = c("mean_control", "mean_case"))
+
+x= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Treatment)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+#### Pre vs Followup
+```{r}
+x= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Followup)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+## POMMS
 
 ```{r}
 max = pomms_pred$auc %>%
@@ -107,15 +260,168 @@ pomms_pred %>%
   theme_classic()
 
 pomms_pred %>%
-  filter(auc == 0.82) %>%
+  filter(auc == max) %>%
   ggplot()+
   geom_boxplot(aes(x= treatment, y= Control, colour = timepoint))+
   geom_point(aes(x= treatment, y= Control, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
   labs(title ="POMMS to CHOICE")+
   theme_classic()
 ```
-#AUCs above 0.7
 
+
+### Distribution
+
+```{r}
+pomms_pred %>%
+  filter(auc == max) %>%
+  ggplot()+
+  geom_density(aes(x= Control, color = treatment))+
+  facet_wrap(~ timepoint)+
+  theme_classic()
+```
+
+### Pre
+```{r}
+x= pomms_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Pre" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= pomms_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Pre" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Treatment
+```{r}
+x= pomms_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Treatment" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= pomms_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Treatment" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Followup
+```{r}
+x= pomms_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Followup" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= pomms_pred %>%
+  filter(auc == max) %>%
+  filter(timepoint == "Followup" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Intervention 
+
+#### Pre vs Treatment
+```{r}
+pomms_summary = pomms_pred %>%
+  filter(auc == max) %>%
+  filter(treatment == "Intervention") %>%
+  group_by(id, timepoint) %>%
+  summarise(mean_control = mean(Control),
+            mean_case = mean(Case)) %>%
+  pivot_wider(names_from = "timepoint", values_from = c("mean_control", "mean_case"))
+
+x= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Treatment)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+#### Pre vs Followup
+```{r}
+x= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Followup)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+### Control
+
+#### Pre vs Treatment
+```{r}
+pomms_summary = pomms_pred %>%
+  filter(auc == max) %>%
+  filter(treatment == "Control") %>%
+  group_by(id, timepoint) %>%
+  summarise(mean_control = mean(Control),
+            mean_case = mean(Case)) %>%
+  pivot_wider(names_from = "timepoint", values_from = c("mean_control", "mean_case"))
+
+x= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Treatment)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+#### Pre vs Followup
+```{r}
+x= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Followup)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+# AUCs above 0.7
+
+## AHA
 ```{r}
 aha_pred %>%
   filter(auc > 0.7) %>%
@@ -134,6 +440,157 @@ aha_pred %>%
   theme_classic()
 ```
 
+### Distribution
+
+```{r}
+aha_pred %>%
+  filter(auc > 0.7) %>%
+  ggplot()+
+  geom_density(aes(x= Control, color= treatment))+
+  facet_wrap(~timepoint)+
+  theme_classic()
+```
+
+### Pre
+```{r}
+x= aha_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Pre" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= aha_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Pre" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Treatment
+```{r}
+x= aha_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Treatment" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= aha_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Treatment" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Followup
+```{r}
+x= aha_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Followup" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= aha_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Followup" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Intervention
+
+#### Pre vs Treatment
+```{r}
+aha_summary = aha_pred %>%
+  filter(auc > 0.7) %>%
+  filter(treatment == "Intervention") %>%
+  group_by(id, timepoint) %>%
+  summarise(mean_control = mean(Control),
+            mean_case = mean(Case)) %>%
+  pivot_wider(names_from = "timepoint", values_from = c("mean_control", "mean_case"))
+
+x= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Treatment)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+#### Pre vs Followup
+```{r}
+x= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Followup)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+### Control
+
+#### Pre vs Treatment
+```{r}
+aha_summary = aha_pred %>%
+  filter(auc > 0.7) %>%
+  filter(treatment == "Control") %>%
+  group_by(id, timepoint) %>%
+  summarise(mean_control = mean(Control),
+            mean_case = mean(Case)) %>%
+  pivot_wider(names_from = "timepoint", values_from = c("mean_control", "mean_case"))
+
+x= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Treatment)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+#### Pre vs Followup
+```{r}
+x= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= aha_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Followup)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+## POMMS
 
 ```{r}
 pomms_pred %>%
@@ -151,6 +608,157 @@ pomms_pred %>%
   geom_point(aes(x= treatment, y= Control, colour = timepoint), position=position_jitterdodge(), alpha = 0.2)+
   labs(title ="POMMS to CHOICE")+
   theme_classic()
+```
+
+### Distribution
+
+```{r}
+pomms_pred %>%
+  filter(auc > 0.7) %>%
+  ggplot()+
+  geom_density(aes(x= Control, color = treatment))+
+  facet_wrap(~ timepoint)+
+  theme_classic()
+```
+
+### Pre
+```{r}
+x= pomms_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Pre" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= pomms_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Pre" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Treatment
+```{r}
+x= pomms_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Treatment" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= pomms_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Treatment" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Followup
+```{r}
+x= pomms_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Followup" & treatment == "Intervention") %>%
+  pull(Control)
+
+y= pomms_pred %>%
+  filter(auc > 0.7) %>%
+  filter(timepoint == "Followup" & treatment == "Control") %>%
+  pull(Control)
+
+t.test(x, y)
+
+wilcox.test(x, y)
+```
+
+### Intervention 
+
+#### Pre vs Treatment
+```{r}
+pomms_summary = pomms_pred %>%
+  filter(auc > 0.7) %>%
+  filter(treatment == "Intervention") %>%
+  group_by(id, timepoint) %>%
+  summarise(mean_control = mean(Control),
+            mean_case = mean(Case)) %>%
+  pivot_wider(names_from = "timepoint", values_from = c("mean_control", "mean_case"))
+
+x= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Treatment)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+#### Pre vs Followup
+```{r}
+x= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Followup)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+### Control
+
+#### Pre vs Treatment
+
+```{r}
+pomms_summary = pomms_pred %>%
+  filter(auc > 0.7) %>%
+  filter(treatment == "Control") %>%
+  group_by(id, timepoint) %>%
+  summarise(mean_control = mean(Control),
+            mean_case = mean(Case)) %>%
+  pivot_wider(names_from = "timepoint", values_from = c("mean_control", "mean_case"))
+
+x= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Treatment) %>%
+  na.omit() %>%
+  pull(mean_control_Treatment)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
+```
+
+#### Pre vs Followup
+```{r}
+x= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Pre)
+
+y= pomms_summary %>%
+  select(id, mean_control_Pre, mean_control_Followup) %>%
+  na.omit() %>%
+  pull(mean_control_Followup)
+
+t.test(x, y, paired = TRUE)
+
+wilcox.test(x, y, paired = TRUE)
 ```
 
 # ASV lookup table
@@ -168,7 +776,6 @@ pomms_pred %>%
 ```{r}
 common_names = read_csv("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Brianna P/diet/food-dbs/data/outputs/dada2-compatible/trnL/trnLGH ASV common names.csv")
 ```
-
 
 # CHOICE
 
@@ -197,6 +804,7 @@ otudf = c_ps %>%
 input = samdf %>%
   left_join(otudf)
 ```
+
 # Best AUC importances
 ```{r}
 max = aha_pred$auc %>%
