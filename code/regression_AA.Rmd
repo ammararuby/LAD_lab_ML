@@ -1,0 +1,69 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# train/test split based box plotting of correlations
+# data: dataframe of samples x features. Features include the variables you want to predict
+# variables: variables that you want to predict using the OTU data
+# iterations: number of different iterations to run of the splitting
+# trainProportion: proportion of samples to use for training
+rf_splitTraining_performance = function(data, variables, iterations = 100, trainProportion = 0.8){
+
+cummulative_correlation = data.frame(row = 1:iterations)
+
+for(variable in variables){
+      
+ # remove all variables we don't care about for this particular model
+      currentData = data %>% 
+        select(-variables[variables != variable])
+      
+      currentData = currentData %>%
+        na.omit()
+      
+correlations = c()
+
+for (i in 1:iterations) {
+    
+    # Data splitting
+    train_ind = caret::createDataPartition((currentData %>%
+                                              pull(variable)), #split based on labe column
+                                     p = trainProportion,
+                                     list = FALSE,
+                                     times = 1)
+    
+    train = currentData[train_ind,] %>% select(-sample)
+    test = currentData[-train_ind,] %>% select(-sample)
+  
+    # create models for all relevant SCFA variables using this particular spli
+    
+      # build model
+      f = as.formula(paste0(variable, " ~ ."))
+      rf = randomForest(f, data = train)
+      
+      # predict on the test set and evaluate predictions
+      pred = predict(rf, newdata = test)
+      test.var = test %>%
+        select(variable) %>%
+        pull()
+      estimate = cor.test(pred, test.var, method = 'pearson')
+      #estimate = cor.test(pred, test[,variable], method = 'spearman')
+      estimate = estimate$estimate %>%  as.numeric() # pull out only the rho estimate
+      correlations = append(correlations, estimate^2)
+      # correlations = append(correlations, estimate)
+}
+
+
+correlations = correlations %>% as.data.frame()
+  colnames(correlations) = variable
+  
+  cummulative_correlation = cummulative_correlation %>%
+      cbind(correlations)
+
+  
+}
+
+return(cummulative_correlation)
+}
+```

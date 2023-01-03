@@ -1,0 +1,300 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+options(scipen=999)
+```
+
+# Libraries
+
+```{r, include = FALSE}
+library(tidyverse)
+library(microbiome)
+library(phyloseq)
+library(caret)
+library(randomForest)
+library(MButils)
+```
+
+# Load data
+
+I am using the AHA dataset for writing my code because it is the simplest dataset I can work with.
+Simplest = significant number of baseline samples without issue of repeated measures, balanced distribution of classes, likely difference to be detected present.
+
+
+```{r}
+a_ps = readRDS("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/AHA/220714_MN00462_0226_A000H3WKM5/20221110_results/ps_objects/AHA_trnl_with_metadata_clinicaldata_20230103.rds")
+
+a_ps
+```
+
+# Preprocess
+
+## Remove problematic samples
+
+Taking out samples with less than 0 reads.
+
+Taking only the baseline timepoint brings further down to 44 samples
+
+```{r}
+a_ps = a_ps %>%
+  subset_samples(reads >0) %>%
+  subset_samples(timepoint == "Baseline")
+
+a_ps
+```
+
+Class distribution in this dataset:
+Case = 20
+Control = 24
+
+```{r}
+sample_data(a_ps) %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  group_by(group) %>%
+  summarise(count = n())
+```
+
+## Data transform
+
+```{r}
+otu_clr = abundances(a_ps, "clr") %>% # rclr transform could not be performed, get Nans
+  t()
+
+a_ps = phyloseq(otu_table(otu_clr, taxa_are_rows = FALSE),
+                   sample_data(sample_data(a_ps)),
+                   tax_table(tax_table(a_ps)))
+
+rm(otu_clr)
+```
+
+## Feature table
+
+### Extract data
+
+Order of asv colnames in OTU table and tax table is the same.
+```{r}
+features = a_ps@otu_table %>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample")
+
+feature_labels = c("sample")
+
+ names = tax_table(a_ps) %>%
+      data.frame() %>%
+   pull(name)
+
+ feature_labels = append(feature_labels, names)
+
+ colnames(features) = feature_labels
+
+features
+```
+
+### Zero variance features
+
+No features have zero variance
+```{r}
+nzv = features %>%
+  select(!sample) %>%
+  nearZeroVar(saveMetrics = TRUE)
+```
+
+```{r}
+rm(nzv)
+```
+
+### Correlated predictors
+
+```{r}
+feature_cor = features %>%
+ select(!sample) %>%
+ cor() 
+
+summary(feature_cor[upper.tri(feature_cor)])
+```
+
+```{r}
+high_cor = findCorrelation(feature_cor, cutoff = .75)
+
+filtered_features = features[,-high_cor]
+```
+
+```{r}
+rm(high_cor)
+rm(feature_cor)
+```
+
+### Linear dependencies
+
+```{r}
+feature_ld = filtered_features %>%
+  select(!sample) %>%
+  findLinearCombos()
+
+filtered_features = filtered_features[, - feature_ld$remove]
+```
+
+## Input table
+
+Ensured in this chunk that every variable shuffling was only happening within individuals who already had a value and not in way where a value was being assigned to individuals who were previously NA.
+```{r}
+sample_labels = a_ps@sam_data%>%
+  as.data.frame() %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("sample") %>%
+  select(sample, bmi, glucose, alt, cholestrol, ldl, hdl, triglyceride, insulin, hba1c, crp, uric_acid, tsh, albumin_creatinine, vit_d)
+
+list = c("bmi", "glucose", "alt", "cholestrol", "ldl", "hdl", "triglyceride", "insulin", "hba1c", "crp", "uric_acid", "tsh", "albumin_creatinine", "vit_d")
+  
+for (word in list){
+  
+  table = sample_labels %>%
+  select(sample, word) %>%
+  na.omit()
+  
+  table[[paste0(str_trim(word),"_shuffled")]] = sample(table[[word]])
+  
+  sample_labels = sample_labels %>%
+    left_join(table)
+  }
+
+input = sample_labels %>%
+  left_join(filtered_features)
+
+```
+Shuffling does not increase number of rows that have values in the shuffled samples as seen below:
+```{r}
+label_list = c("bmi","glucose","alt","cholestrol","ldl","hdl","triglyceride","insulin","hba1c","crp","uric_acid","tsh","albumin_creatinine","vit_d","bmi_shuffled","glucose_shuffled","alt_shuffled","cholestrol_shuffled","ldl_shuffled","hdl_shuffled","triglyceride_shuffled","insulin_shuffled","hba1c_shuffled","crp_shuffled","uric_acid_shuffled","tsh_shuffled","albumin_creatinine_shuffled","vit_d_shuffled")
+
+
+for (word in label_list){
+ r = input %>%
+    select(word) %>%
+    na.omit %>%
+    nrow()
+ 
+ print(r)
+}
+```
+
+# Modeling
+
+Load functions from regression_AA file
+
+```{r}
+results = rf_splitTraining_performance(input, variables= label_list, iterations =100, trainProportion = 0.7)
+```
+
+# Plotting
+
+## AUC plot and t-test
+```{r}
+results %>%
+  pivot_longer(cols = bmi:vit_d_shuffled, names_to = "variable", values_to = "pearson_corr") %>%
+  mutate(type = ifelse(str_detect(variable, "shuffle"), "shuffled", "actual")) %>%
+  ggplot(aes(x= variable, y = pearson_corr, colour = type))+
+  geom_boxplot()+
+  theme_classic()+
+  theme(axis.text.x = element_text(hjust = 1, angle = 45))
+
+ggsave("/Users/aa370/Library/CloudStorage/Box-Box/project_davidlab/LAD_LAB_Personnel/Ammara_A/Projects/AHA/figures/clinical_predictions_100iterations.png", width =12)
+```
+
+
+```{r}
+t.test(results$albumin_creatinine, results$albumin_creatinine_shuffle)
+t.test(results$alt, results$alt_shuffle)
+t.test(results$bmi, results$bmi_shuffle)
+t.test(results$cholestrol, results$cholestrol_shuffle)
+
+t.test(results$crp, results$crp_shuffle)
+t.test(results$glucose, results$glucose_shuffle)
+t.test(results$hba1c, results$hba1c_shuffle)
+t.test(results$hdl, results$hdl_shuffle)
+
+t.test(results$insulin, results$insulin_shuffle)
+t.test(results$ldl, results$ldl_shuffle)
+t.test(results$triglyceride, results$triglyceride_shuffle)
+t.test(results$tsh, results$tsh_shuffle)
+
+t.test(results$uric_acid, results$uric_acid_shuffle)
+t.test(results$vit_d, results$vit_d_shuffle)
+
+p = c(0.8246, 0.007718, 0.117, 0.2631, 0.02055, 0.00003213, 0.000000000001227, 0.9426, 0.009323, 0.04751, 0.2033, 0.00000001367, 0.000004656, 0.01342)
+
+p.adjust(p, method = p.adjust.methods, n = length(p))
+
+```
+
+# All of this is from the AHA classification file-unedited 01/03/2023
+## Importance plots
+
+### look-up table
+```{r}
+#Making asv reference for names in model
+lookup_asv = tax_table(a_ps) %>% 
+     data.frame() %>%
+      lowest_level() %>%
+   rownames_to_column("asv") %>% 
+   select(asv, name) %>%
+   mutate(name = make.names(make.unique(name)))
+```
+
+### summarize importances
+```{r}
+# Making summary df of importances
+importance_summary = importance_df %>%
+  pivot_longer(cols = c("NA.1":"Solanum.lycopersicum"), names_to = "food", values_to = "importance") %>%
+  group_by(variable, food) %>%
+  summarise(mean_importance = mean(importance)) %>%
+  arrange(variable, desc(mean_importance))
+```
+### top 10 ranked list
+```{r}
+# Getting the ranked list
+ranking = importance_summary %>%
+  filter(variable == "group_shuffle") %>%
+  pull(food)
+
+top10 = ranking[1:10]
+```
+
+### Importance plot
+```{r}
+importance_df %>%
+  pivot_longer(cols = c("NA.1":"Solanum.lycopersicum"), names_to = "food", values_to = "importance")  %>%
+  filter(variable == "group_shuffle" & food %in% top10) %>%
+  ggplot()+
+  geom_boxplot(aes(x= reorder(food,-importance), y = importance))+
+  labs(x= "Food", y ="Importance") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+Some of the important NAs for predictions only map to bacterial species in BLAST.
+
+# Important taxa directions
+
+```{r}
+sample_data(a_ps) %>%
+  data.frame() %>%
+  ggplot() +
+  geom_boxplot(aes(x= group, y = baseline_bmi))+
+  theme_classic()
+
+plot_food_direction(top10, input)
+```
+
+
+```{r}
+lookup_asv %>%
+  filter(name == "Carya") %>%
+  pull(asv)
+```
+
+

@@ -1,0 +1,104 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# train/test split based box plotting of correlations
+# data: dataframe of samples x features. Features include the variables you want to predict
+# variables: variables that you want to predict using the OTU data
+# iterations: number of different iterations to run of the splitting
+# trainProportion: proportion of samples to use for training
+rf_splitTraining_performance = function(data, variables, title, iterations = 100, trainProportion = 0.8){
+
+  trainSize = trainProportion*nrow(data)
+  df = data.frame()
+
+  for (i in 1:iterations){
+    # Create training and test splits on the data
+    trainInd = vector()
+    count = 0
+    subjects = table(data$subj) %>% 
+      names()
+    subjects = subjects[shuffle(length(subjects))]# randomly shuffle samples to try different splits
+    
+    for (subject in subjects){
+      numSamplesPerSubject = (table(data$subj))[subject] %>% as.numeric()
+      
+      if (numSamplesPerSubject + count < trainSize){ # if adding all of this subject's samples to the training set does not exceed the training set size then add it
+        # insert this subject's indices into the train list
+        trainInd = trainInd %>% append(which(data$subj == subject))
+        count = count + numSamplesPerSubject
+      }
+    }
+    
+    correlations = c()
+  
+    # create models for all relevant SCFA variables using this particular split
+    for (variable in variables){
+    
+      # remove all variables we don't care about for this particular model
+      currentData = data %>% 
+        select(-variables[variables != variable])
+      
+      # split data into a test and training set
+      train = currentData[trainInd,] %>%  select(-subj)
+      test = currentData[-trainInd,] %>%  select(-subj)
+    
+      # build model
+      f = as.formula(paste0(variable, " ~ ."))
+      rf = randomForest(f, data = train)
+      
+      # predict on the test set and evaluate predictions
+      pred = predict(rf, newdata = test)
+      test.var = test %>%
+        select(variable) %>%
+        pull()
+      estimate = cor.test(pred, test.var, method = 'pearson')
+      # estimate = cor.test(pred, test[,variable], method = 'spearman')
+      estimate = estimate$estimate %>%  as.numeric() # pull out only the rho estimate
+      correlations = append(correlations, estimate^2)
+      # correlations = append(correlations, estimate)
+
+      ####################################
+      # Plot residuals from the model - suppress this when I want to do higher levels of iterations
+      # plotData = data.frame(true = test[,variable], pred = pred) %>% 
+      #   mutate(residual = true-pred, index = 1:length(pred))
+      # p = ggplot(data = plotData, aes(y = residual, x = index)) +
+      #   geom_point(size = .5) +
+      #   geom_smooth(method = lm, se = FALSE, size = .5, color = "gray") +
+      #   theme(legend.position = "none")        
+      # print(p)
+    }
+
+  correlations = correlations %>% 
+    t() %>% 
+    data.frame()
+  names(correlations) = variables
+  rownames(correlations) = i
+  
+  df = rbind(df, correlations)
+  
+  }
+  # plot the resulting data into a box plot
+  p = ggplot(data.table::melt(df), aes(y = value, x = variable)) +
+    geom_boxplot() +
+    # labs(x = "Type of SCFA", y = "Spearman Correlation", title = title) + 
+    labs(x = variable, y = "R-Squared", title = title) + 
+    ylim(0,1)
+        # ylim(-0.5,1)
+  
+  # add in x = SCFA to do this across relevant SCFAs
+  print(p)
+  
+  print(summary(df))
+  
+  print (df)
+}
+```
+
+
+```{r}
+rf_splitTraining_performance(input, variables= c("treatment_control", "treatment_shuffled"), title= "CHOICE group", iterations =5, trainProportion = 0.6)
+
+```
